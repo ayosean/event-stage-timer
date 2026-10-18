@@ -10,7 +10,7 @@ Verified on 2026-10-18:
 - Production environment: `60ac967a-ce6e-4c7a-be6b-d155e90e5f20`.
 - Persistent volume: `stage-timer-data`, mounted at `/data`, 512 MB.
 - One replica, service sleeping disabled, health check `/health`.
-- Backend secrets `ADMIN_PASSWORD` and `SESSION_SECRET` generated and stored in Railway variables. They are not committed to this repository. Retrieve the controller password in Railway → service → Variables → `ADMIN_PASSWORD`.
+- Login settings `ADMIN_USERNAME` and `ADMIN_PASSWORD`, and the generated `SESSION_SECRET`, are stored in Railway variables. They are not committed to this repository. Retrieve the controller password in Railway → service → Variables → `ADMIN_PASSWORD`.
 - `PUBLIC_URL`, `DATA_DIR=/data`, and `NODE_ENV=production` are configured.
 
 The application was deployed directly from the local checkout with Railway CLI because GitHub rejected write access. **GitHub publication and deployment-on-push are still pending.** Once repository write access is restored, push the committed implementation, connect this existing Railway service to `ayosean/event-stage-timer` on branch `main`, and enable automatic deployments. Reuse the service and volume above rather than creating a duplicate.
@@ -19,7 +19,7 @@ The production Docker build and health check succeeded. An actual Railway redepl
 
 ## Optional live smoke test
 
-Run this **before** an event: it changes the live countdown and returns it to 90:00 ready. Install the development dependencies and Chromium first. Store a JSON object containing `ADMIN_PASSWORD` in a secure file outside this repository, then run:
+Run this **before** an event: it changes the live countdown and returns it to 90:00 ready. Install the development dependencies and Chromium first. Store a JSON object containing `ADMIN_USERNAME` and `ADMIN_PASSWORD` in a secure file outside this repository, then run:
 
 ```sh
 LIVE_URL=https://event-stage-timer-production.up.railway.app \

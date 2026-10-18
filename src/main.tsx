@@ -104,6 +104,7 @@ function Display() {
   );
 }
 function Login({ onLogin }: { onLogin: () => void }) {
+  const [username, setUsername] = useState("");
   const [password, setPassword] = useState(""),
     [error, setError] = useState(""),
     [busy, setBusy] = useState(false);
@@ -119,7 +120,7 @@ function Login({ onLogin }: { onLogin: () => void }) {
             const response = await fetch("/api/login", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ password }),
+              body: JSON.stringify({ username, password }),
             });
             if (response.ok) {
               setPassword("");
@@ -142,9 +143,20 @@ function Login({ onLogin }: { onLogin: () => void }) {
         <h1>Take control of the room.</h1>
         <p className="muted">Sign in to your live event controller.</p>
         <label>
-          Admin password
+          Username
           <input
             autoFocus
+            type="text"
+            autoComplete="username"
+            required
+            value={username}
+            onChange={(e) => setUsername(e.target.value)}
+            maxLength={80}
+          />
+        </label>
+        <label>
+          Admin password
+          <input
             type="password"
             autoComplete="current-password"
             required

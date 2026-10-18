@@ -6,9 +6,8 @@ const baseURL = process.env.LIVE_URL;
 const secretFile = process.env.LIVE_CREDENTIALS_FILE;
 if (!baseURL || !secretFile)
   throw new Error("Set LIVE_URL and LIVE_CREDENTIALS_FILE.");
-const { ADMIN_PASSWORD: password } = JSON.parse(
-  readFileSync(secretFile, "utf8"),
-);
+const { ADMIN_PASSWORD: password, ADMIN_USERNAME: username = "admin" } =
+  JSON.parse(readFileSync(secretFile, "utf8"));
 const artifactDir = process.env.LIVE_ARTIFACT_DIR ?? "test-results/live";
 mkdirSync(artifactDir, { recursive: true });
 const browser = await chromium.launch({
@@ -21,6 +20,7 @@ try {
   const errors = [];
   controller.on("pageerror", (error) => errors.push(error.message));
   await controller.goto("/controller");
+  await controller.getByLabel("Username", { exact: true }).fill(username);
   await controller.getByLabel("Admin password").fill(password);
   await controller.getByRole("button", { name: "Open controller" }).click();
   await expect(controller.getByText("Connected", { exact: true })).toBeVisible({

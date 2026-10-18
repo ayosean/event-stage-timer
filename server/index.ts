@@ -1,10 +1,18 @@
 import { createApp } from "./app.js";
 const production = process.env.NODE_ENV === "production";
 const password = process.env.ADMIN_PASSWORD;
+const username = process.env.ADMIN_USERNAME ?? "admin";
 const secret = process.env.SESSION_SECRET;
-if (!password || password.length < 12 || !secret || secret.length < 32)
+if (
+  !username ||
+  username.length > 80 ||
+  !password ||
+  password.length > 1024 ||
+  !secret ||
+  secret.length < 32
+)
   throw new Error(
-    "Set ADMIN_PASSWORD (12+ characters) and SESSION_SECRET (32+ characters).",
+    "Set ADMIN_USERNAME (1–80 characters), ADMIN_PASSWORD (1–1024 characters), and SESSION_SECRET (32+ characters).",
   );
 if (
   production &&
@@ -31,6 +39,7 @@ const publicUrl = process.env.PUBLIC_URL
   ? new URL(process.env.PUBLIC_URL).origin
   : undefined;
 const service = createApp({
+  username,
   password,
   secret,
   production,

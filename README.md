@@ -14,7 +14,8 @@ A single-service event countdown for a remote controller and any number of read-
 
    | Variable         | Value                                                                                                                                               |
    | ---------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
-   | `ADMIN_PASSWORD` | A unique password of at least 12 characters; use a password manager.                                                                                |
+   | `ADMIN_USERNAME` | Your admin username (defaults to `admin` if omitted).                                                                                               |
+   | `ADMIN_PASSWORD` | Your admin password. A long unique password is recommended.                                                                                         |
    | `SESSION_SECRET` | At least 32 random characters. Generate with `openssl rand -hex 32`. Keep stable across deployments.                                                |
    | `PUBLIC_URL`     | Your exact public origin, e.g. `https://your-service.up.railway.app`. No path. Must match the browser's address, including a custom domain if used. |
    | `DATA_DIR`       | `/data`                                                                                                                                             |
@@ -71,7 +72,7 @@ Requires Node **24.x** (native `node:sqlite`).
 ```sh
 npm ci
 cp .env.example .env
-# Edit ADMIN_PASSWORD and SESSION_SECRET. Leave PUBLIC_URL commented for local HTTP.
+# Edit ADMIN_USERNAME, ADMIN_PASSWORD and SESSION_SECRET. Leave PUBLIC_URL commented for local HTTP.
 npm run build
 npm start
 # http://localhost:3000/controller and /display

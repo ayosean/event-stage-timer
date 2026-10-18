@@ -21,6 +21,9 @@ try {
   const page = await context.newPage();
   await page.goto("/controller");
   if (process.argv[2] === "before") {
+    await page
+      .getByLabel("Username", { exact: true })
+      .fill(secrets.ADMIN_USERNAME ?? "admin");
     await page.getByLabel("Admin password").fill(secrets.ADMIN_PASSWORD);
     await page.getByRole("button", { name: "Open controller" }).click();
   }

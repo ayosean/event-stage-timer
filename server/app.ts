@@ -14,6 +14,7 @@ import { z } from "zod";
 import { expire, reduce, type State } from "../shared/timer.js";
 import { Store } from "./store.js";
 export interface Config {
+  username?: string;
   password: string;
   secret: string;
   dbPath: string;
@@ -109,16 +110,20 @@ export function createApp(config: Config) {
     attempt.count++;
     attempts.set(ip, attempt);
     const parsed = z
-      .object({ password: z.string().min(1).max(1024) })
+      .object({
+        username: z.string().min(1).max(80),
+        password: z.string().min(1).max(1024),
+      })
       .safeParse(req.body);
     if (
       !parsed.success ||
+      parsed.data.username !== (config.username ?? "admin") ||
       !timingSafeEqual(
         passwordHash,
         scryptSync(parsed.data.password, config.secret, 32),
       )
     ) {
-      res.status(401).json({ error: "Incorrect password." });
+      res.status(401).json({ error: "Incorrect username or password." });
       return;
     }
     attempts.delete(ip);

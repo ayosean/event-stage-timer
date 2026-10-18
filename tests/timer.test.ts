@@ -14,7 +14,9 @@ import {
 } from "../shared/timer.js";
 const password = "test-only-password-1234",
   secret = "test-only-session-secret-at-least-32-characters";
-async function fixture() {
+async function fixture(
+  overrides: { username?: string; password?: string } = {},
+) {
   let time = 1_800_000_000_000;
   const dir = mkdtempSync(join(tmpdir(), "stage-timer-"));
   const config = {
@@ -22,6 +24,7 @@ async function fixture() {
     secret,
     dbPath: join(dir, "timer.sqlite"),
     now: () => time,
+    ...overrides,
   };
   let service = createApp(config);
   const listen = async () => {
@@ -37,7 +40,10 @@ async function fixture() {
     const r = await fetch(base + "/api/login", {
       method: "POST",
       headers: { Origin: base, "Content-Type": "application/json" },
-      body: JSON.stringify({ password }),
+      body: JSON.stringify({
+        username: config.username ?? "admin",
+        password: config.password,
+      }),
     });
     assert.equal(r.status, 200);
     return r.headers.get("set-cookie")!.split(";")[0];
@@ -413,7 +419,7 @@ test("login throttling and invalid passwords are rejected without issuing cookie
       const r = await fetch(f.base + "/api/login", {
         method: "POST",
         headers: { Origin: f.base, "Content-Type": "application/json" },
-        body: JSON.stringify({ password: "wrong" }),
+        body: JSON.stringify({ username: "admin", password: "wrong" }),
       });
       assert.equal(r.status, i < 10 ? 401 : 429);
       assert.equal(r.headers.get("set-cookie"), null);
@@ -433,6 +439,31 @@ test("a deadline that passes while the server is down recovers expired", async (
     const state = f.service.getState();
     assert.equal(state.timer.status, "expired");
     assert.equal(formatTime(state.timer.remainingMs), "00:00");
+  } finally {
+    await f.close();
+  }
+});
+
+test("configured username and password are both required for login", async () => {
+  const f = await fixture({
+    username: "event-crew",
+    password: "short-test-password",
+  });
+  try {
+    for (const [username, password, status] of [
+      ["wrong-user", "short-test-password", 401],
+      ["event-crew", "wrong-password", 401],
+      ["event-crew", "short-test-password", 200],
+      ["", "short-test-password", 401],
+    ] as const) {
+      const response = await fetch(f.base + "/api/login", {
+        method: "POST",
+        headers: { Origin: f.base, "Content-Type": "application/json" },
+        body: JSON.stringify({ username, password }),
+      });
+      assert.equal(response.status, status);
+      assert.equal(!!response.headers.get("set-cookie"), status === 200);
+    }
   } finally {
     await f.close();
   }

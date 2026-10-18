@@ -5,6 +5,7 @@ test("controller, landscape iPad, offline countdown, refresh, and manual present
 }, testInfo) => {
   const sessionName = `Closing keynote · ${testInfo.project.name}`;
   await page.goto("/controller");
+  await page.getByLabel("Username", { exact: true }).fill("admin");
   await page.getByLabel("Admin password").fill("browser-test-only-password");
   await page.getByRole("button", { name: "Open controller" }).click();
   await expect(page.getByText("Connected", { exact: true })).toBeVisible();
