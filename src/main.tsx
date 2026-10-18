@@ -429,23 +429,27 @@ function Controller({ onLogout }: { onLogout: () => void }) {
               <div className="adjustments">
                 <span className="control-caption">ADJUST LIVE TIME</span>
                 <div>
-                  {[-10, -5, -1, 1, 5, 10].map((n) => (
-                    <button
-                      key={n}
-                      disabled={disabled}
-                      aria-label={`${n > 0 ? "Add" : "Subtract"} ${Math.abs(n)} minutes`}
-                      onClick={() =>
-                        command({
-                          type: "adjust",
-                          deltaMs: (n * 60000) as 60000,
-                        })
-                      }
-                    >
-                      {n > 0 ? "+" : "−"}
-                      {Math.abs(n)}
-                      <span>m</span>
-                    </button>
-                  ))}
+                  {(
+                    [
+                      -600000, -300000, -60000, -30000, 30000, 60000, 300000,
+                      600000,
+                    ] as const
+                  ).map((deltaMs) => {
+                    const seconds = Math.abs(deltaMs) < 60000;
+                    const amount = Math.abs(deltaMs) / (seconds ? 1000 : 60000);
+                    return (
+                      <button
+                        key={deltaMs}
+                        disabled={disabled}
+                        aria-label={`${deltaMs > 0 ? "Add" : "Subtract"} ${amount} ${seconds ? "seconds" : "minutes"}`}
+                        onClick={() => command({ type: "adjust", deltaMs })}
+                      >
+                        {deltaMs > 0 ? "+" : "−"}
+                        {amount}
+                        <span>{seconds ? "s" : "m"}</span>
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
             </div>

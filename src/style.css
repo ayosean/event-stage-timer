@@ -345,7 +345,7 @@ h2 {
 }
 .adjustments > div {
   display: grid;
-  grid-template-columns: repeat(6, 1fr);
+  grid-template-columns: repeat(8, 1fr);
   gap: 8px;
   margin-top: 12px;
 }
@@ -990,4 +990,10 @@ body:has(.presenter-display) {
   background: #3a2026;
   color: #ff8b8b;
   border-color: #75414a;
+}
+
+@media (max-width: 1000px) {
+  .adjustments > div {
+    grid-template-columns: repeat(4, 1fr);
+  }
 }

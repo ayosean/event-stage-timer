@@ -24,6 +24,15 @@ test("controller, landscape iPad, offline countdown, refresh, and manual present
   const viewer = await context.newPage();
   await viewer.goto("/display");
   await expect(viewer.locator("main")).toHaveText("90:00");
+  await page
+    .getByRole("button", { name: "Add 30 seconds", exact: true })
+    .click();
+  await expect(viewer.locator("main")).toHaveText("90:30");
+  await expect(page.getByText("READY TO START", { exact: true })).toBeVisible();
+  await page
+    .getByRole("button", { name: "Subtract 30 seconds", exact: true })
+    .click();
+  await expect(viewer.locator("main")).toHaveText("90:00");
   await expect(viewer.locator("button,input,a,progress")).toHaveCount(0);
   await expect(viewer.locator("main")).toHaveCSS(
     "background-color",

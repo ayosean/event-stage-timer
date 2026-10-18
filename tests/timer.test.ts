@@ -547,3 +547,41 @@ test("upgrading a previously expired timer never starts it automatically", () =>
   assert.equal(started.timer.status, "running");
   assert.equal(formatTime(remaining(started.timer, 62000)), "00:02");
 });
+
+test("30-second adjustments preserve the running deadline, paused state and overtime", async () => {
+  const f = await fixture();
+  try {
+    const original = await f.command({ type: "start" });
+    f.advance(1500);
+    let state = await f.command({ type: "adjust", deltaMs: 30000 });
+    assert.equal(state.timer.deadline, original.timer.deadline! + 30000);
+    assert.equal(state.timer.status, "running");
+    state = await f.command({ type: "adjust", deltaMs: -30000 });
+    assert.equal(state.timer.deadline, original.timer.deadline);
+    state = await f.command({ type: "pause" });
+    const paused = state.timer.remainingMs;
+    state = await f.command({ type: "adjust", deltaMs: 30000 });
+    assert.equal(state.timer.status, "paused");
+    assert.equal(state.timer.deadline, null);
+    assert.equal(state.timer.remainingMs, paused + 30000);
+    state = await f.command({ type: "adjust", deltaMs: -30000 });
+    assert.equal(state.timer.status, "paused");
+    assert.equal(state.timer.remainingMs, paused);
+    await f.command({ type: "setDuration", durationMs: 1000 });
+    await f.command({ type: "start" });
+    f.advance(16000);
+    state = await f.command({ type: "adjust", deltaMs: 30000 });
+    assert.equal(remaining(state.timer, f.now), 15000);
+    assert.equal(state.timer.status, "running");
+    state = await f.command({ type: "adjust", deltaMs: -30000 });
+    assert.equal(remaining(state.timer, f.now), -15000);
+    assert.equal(state.timer.status, "running");
+    state = await f.command({ type: "reset" });
+    assert.equal(state.timer.status, "ready");
+    state = await f.command({ type: "adjust", deltaMs: -30000 });
+    assert.equal(state.timer.status, "paused");
+    assert.equal(state.timer.deadline, null);
+  } finally {
+    await f.close();
+  }
+});

@@ -11,6 +11,8 @@ export const commandSchema = z.discriminatedUnion("type", [
   z.object({
     type: z.literal("adjust"),
     deltaMs: z.union([
+      z.literal(30000),
+      z.literal(-30000),
       z.literal(60000),
       z.literal(300000),
       z.literal(600000),
