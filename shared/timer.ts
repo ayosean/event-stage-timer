@@ -30,15 +30,13 @@ export interface Snapshot {
   viewers?: number;
   commandId?: string;
 }
+// Signed time: positive counts down; negative measures elapsed overtime.
 export const remaining = (timer: Timer, now: number) =>
-  Math.max(
-    0,
-    timer.status === "running" && timer.deadline !== null
-      ? timer.deadline - now
-      : timer.remainingMs,
-  );
+  timer.status === "running" && timer.deadline !== null
+    ? timer.deadline - now
+    : timer.remainingMs;
 export function formatTime(ms: number) {
-  const seconds = Math.ceil(Math.max(0, ms) / 1000);
+  const seconds = ms < 0 ? Math.floor(-ms / 1000) : Math.ceil(ms / 1000);
   return `${Math.floor(seconds / 60)
     .toString()
     .padStart(2, "0")}:${(seconds % 60).toString().padStart(2, "0")}`;
@@ -66,23 +64,25 @@ export function ready(durationMs: number): Timer {
     pausedAt: null,
   };
 }
-export function expire(state: State, now: number): State {
-  return state.timer.status === "running" && remaining(state.timer, now) === 0
+// Old deployments stopped at zero. Preserve that stopped state during upgrade;
+// only an explicit Start/Resume may start it under the new overtime behavior.
+export function normalizeState(state: State, now: number): State {
+  return state.timer.status === "expired"
     ? {
         ...state,
         revision: state.revision + 1,
         timer: {
           ...state.timer,
-          status: "expired",
+          status: "paused",
           remainingMs: 0,
           deadline: null,
-          pausedAt: now,
+          pausedAt: state.timer.pausedAt ?? now,
         },
       }
     : state;
 }
 export function reduce(input: State, command: Command, now: number): State {
-  const state = structuredClone(expire(input, now));
+  const state = structuredClone(normalizeState(input, now));
   const timer = state.timer;
   const session = (id: string) => {
     const s = state.sessions.find((s) => s.id === id);
@@ -95,7 +95,7 @@ export function reduce(input: State, command: Command, now: number): State {
   };
   switch (command.type) {
     case "start":
-      if (timer.status !== "running" && timer.remainingMs > 0) {
+      if (timer.status !== "running") {
         timer.status = "running";
         timer.deadline = now + timer.remainingMs;
         timer.startedAt = now;
@@ -118,20 +118,11 @@ export function reduce(input: State, command: Command, now: number): State {
       state.timer = ready(command.durationMs);
       break;
     case "adjust": {
-      const value = Math.min(
-        MAX_MS,
-        Math.max(0, remaining(timer, now) + command.deltaMs),
-      );
+      const value = Math.min(MAX_MS, remaining(timer, now) + command.deltaMs);
       timer.remainingMs = value;
       if (timer.status === "running") timer.deadline = now + value;
-      if (value === 0) {
-        timer.status = "expired";
-        timer.deadline = null;
-        timer.pausedAt = now;
-      } else if (timer.status === "expired") {
-        timer.status = "paused";
-        timer.deadline = null;
-      }
+      // An adjustment never starts a stopped timer, even if it crosses zero.
+      if (timer.status !== "running" && value <= 0) timer.status = "paused";
       break;
     }
     case "select":

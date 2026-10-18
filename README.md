@@ -3,7 +3,7 @@
 A single-service event countdown for a remote controller and any number of read-only presenter displays. React + TypeScript + Vite, Node 24, native WebSockets, and SQLite. No external database or paid real-time service is required.
 
 - `/controller`: password-protected dark production dashboard, rundown editor, presets, live adjustments, and viewer count.
-- `/display`: **only** a huge centered countdown on pure black. White digits; red `00:00` at expiration. No names, branding, controls, or scrolling.
+- `/display`: **only** a huge centered countdown on pure black. White digits while counting down; red `00:00` at zero, then elapsed overtime counting up (`00:01`, `00:02`, …). No names, branding, controls, or scrolling.
 - `/health`: database health check, returns `{"ok":true}` when healthy.
 
 ## Deploy to Railway
@@ -31,15 +31,15 @@ A push alone is not proof of a successful Railway deployment. Until the domain, 
 
 ### Persistence and recovery
 
-SQLite is stored at `/data/stage-timer.sqlite` (plus WAL/SHM files). Each command is committed synchronously, using WAL and `synchronous=FULL`, **before** it is broadcast. Rundown order, durations, selected session, revision, status, start/pause timestamps, and deadline survive restart. A running timer continues toward its original deadline during downtime; paused timers stay paused. An elapsed deadline recovers as expired. Deployment never starts a ready timer.
+SQLite is stored at `/data/stage-timer.sqlite` (plus WAL/SHM files). Each command is committed synchronously, using WAL and `synchronous=FULL`, **before** it is broadcast. Rundown order, durations, selected session, revision, status, start/pause timestamps, and deadline survive restart. A running timer continues toward its original deadline during downtime; paused timers stay paused. An elapsed deadline recovers running in overtime, preserving the original deadline. Deployment never starts a ready timer.
 
 Do not remove or replace the volume during redeploys. Enable Railway volume backups/snapshots where available. For application-consistent manual backups while online, use SQLite's backup API/CLI rather than copying just the main database while WAL is active. A normal single-volume redeploy can briefly interrupt connections; clients reconnect automatically. This design is one event workspace per service, not a multi-instance cluster. Deploy outside critical live moments when practical.
 
 ## Controller operation
 
 - **Start / Resume** is the only command that begins counting. It does nothing if already running or if no time remains.
-- Presets **30 / 45 / 60 / 90**, a custom duration, session selection, previous/next, and reset **always load ready, with no deadline**. Editing the selected session's duration also loads ready. There is no automatic progression at zero.
-- Reset restores the loaded duration. Adding/subtracting 1, 5, or 10 minutes changes current remaining time; while running it moves the deadline without changing the running state. These adjustments do not rewrite the session's saved duration. Subtraction clamps at zero. Adding to an expired timer leaves it paused.
+- Presets **15 / 30 / 45 / 60 / 90**, a custom duration, session selection, previous/next, and reset **always load ready, with no deadline**. Editing the selected session's duration also loads ready. At zero the same timer continues counting elapsed overtime in red. The app never automatically selects another presenter.
+- Reset restores the loaded duration. Adding/subtracting 1, 5, or 10 minutes changes current remaining time; while running it moves the deadline without changing the running state. These adjustments do not rewrite the session's saved duration. Adjustments use signed remaining time: adding five minutes to 00:30 overtime restores a 04:30 countdown. Subtraction may move a running timer into overtime. Adjustments never start a stopped timer. Pause/resume also works during overtime.
 - Session names and durations are editable; add, duplicate, delete, and reorder with the up/down arrows. Arrow buttons also work on touch devices and keyboards. Deleting the selected session loads the adjacent session ready. Keep at least one session. Limits: 200 sessions, 120-character names, duration 1 second–999 minutes.
 - Controls disable while disconnected or awaiting acknowledgement. Commands are never queued or retried automatically after network failure. If confirmation times out, review the synchronized timer before issuing another command. Concurrent controllers use revision checks so a stale command is rejected instead of silently applying to a new presenter.
 - Controller logins last 24 hours. Reauthenticate between event days. Expiration/sign-out does not stop the timer or presenter displays. The login cookie is HttpOnly, SameSite=Strict, and Secure in production. Sign-out revokes that session, including its open controller connections.
@@ -55,7 +55,7 @@ Do not remove or replace the volume during redeploys. Enable Railway volume back
 
 ## Timing and network behavior
 
-The server owns timer state and epoch deadlines. It never decrements a counter every second. Clients render remaining time using the deadline and an estimate of server time, using timestamp round trips to account for device clock differences and a monotonic browser clock between syncs. Sync requests run every 10 seconds; the server pings sockets every 15 seconds to remove dead viewers. A one-shot deadline timeout persists expiration; state is also normalized on reads/commands and on boot. The display clamps at zero and uses ceil-to-second formatting (`90:00`, `89:59`, …, `00:00`).
+The server owns timer state and epoch deadlines. It never decrements a counter every second. Clients render remaining time using the deadline and an estimate of server time, using timestamp round trips to account for device clock differences and a monotonic browser clock between syncs. Sync requests run every 10 seconds; the server pings sockets every 15 seconds to remove dead viewers. The same deadline continues to measure overtime without a server tick or an expiration timeout. Before zero, remaining time rounds up (`90:00`, `89:59`, …); at zero the digits turn red, then elapsed full seconds count up (`00:00`, `00:01`, …). Overtime shows digits only, with no minus sign, label, or extra display elements. Pausing stores signed remaining time, and resuming restores the correct deadline. Old stopped-at-zero states from earlier versions migrate to paused zero and require manual Resume.
 
 Clients reconnect with bounded exponential backoff and jitter, restore state after refresh, and resynchronize after visibility/network changes. Each reconnected viewer receives the current authoritative deadline rather than starting a timer. If a browser is suspended, it reconciles on returning to the foreground. Timing during an outage reflects only the last known server state. Internet latency and device/browser scheduling mean this is not a frame-accurate broadcast timecode system.
 
@@ -88,8 +88,8 @@ npm run test:e2e           # browser checks, including landscape iPad-sized disp
 npm run format:check
 ```
 
-Browser tests start their own server on port 3000 with disposable test credentials and use `data/browser-test-*` (ignored by Git). The browser suite checks offline local ticking, reconnect, refresh, all controls needed for the main flow, red zero, landscape fitting, and mobile layout. Integration tests cover all ten requested scenarios, plus auth revocation, stale/replayed commands, input validation, login throttling, and rundown operations. CI runs these checks on pushes and pull requests.
+Browser tests start their own server on port 3000 with disposable test credentials and use `data/browser-test-*` (ignored by Git). The browser suite checks offline local ticking, reconnect, refresh, all controls needed for the main flow, red overtime, 15-minute preset, landscape fitting, and mobile layout. Integration tests cover all ten requested scenarios, plus auth revocation, stale/replayed commands, input validation, login throttling, and rundown operations. CI runs these checks on pushes and pull requests.
 
 ### Live-device smoke checks
 
-On a laptop and landscape iPad using different networks: log in, load 90 minutes (paused), start, pause/resume, add five minutes, reload the iPad, disconnect/reconnect Wi-Fi, load 30 minutes (paused), and advance to a different presenter (paused). Temporarily load a short duration and verify red `00:00`. Redeploy once before the event and verify the same deadline and rundown return. Test Auto-Lock and Guided Access for longer than the device's normal sleep interval. Automated browser tests cannot verify the physical iPad's sleep settings.
+On a laptop and landscape iPad using different networks: log in, load 90 minutes (paused), start, pause/resume, add five minutes, reload the iPad, disconnect/reconnect Wi-Fi, load 30 minutes (paused), and advance to a different presenter (paused). Temporarily load a short duration and verify red `00:00` followed by increasing overtime. Redeploy once before the event and verify the same deadline and rundown return. Test Auto-Lock and Guided Access for longer than the device's normal sleep interval. Automated browser tests cannot verify the physical iPad's sleep settings.

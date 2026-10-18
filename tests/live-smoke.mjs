@@ -72,6 +72,15 @@ try {
     .click();
   await expect(display.locator("main")).toHaveText("00:00", { timeout: 10000 });
   await expect(display.locator(".digits")).toHaveCSS("color", "rgb(255, 0, 0)");
+  await expect(display.locator("main")).toHaveText("00:01", { timeout: 4000 });
+  await expect(controller.getByText("OVERTIME", { exact: true })).toBeVisible();
+  await display.reload();
+  await expect(display.locator(".digits")).toHaveCSS("color", "rgb(255, 0, 0)");
+  await controller.getByRole("button", { name: "15 min", exact: true }).click();
+  await expect(display.locator("main")).toHaveText("15:00");
+  await expect(
+    controller.getByText("READY TO START", { exact: true }),
+  ).toBeVisible();
   await controller.getByRole("button", { name: "90 min", exact: true }).click();
   await expect(display.locator("main")).toHaveText("90:00");
   await expect(
@@ -84,7 +93,7 @@ try {
   await display.screenshot({ path: join(artifactDir, "display.png") });
   if (errors.length) throw Error(errors.join("\n"));
   console.log(
-    "Live HTTPS login, WSS synchronization, 90-minute manual start, refresh, add five minutes, pause/resume, preset paused state, red zero and 90:00 ready restoration passed.",
+    "Live HTTPS login, WSS synchronization, 90-minute manual start, refresh, add five minutes, pause/resume, preset paused state, red overtime, 15-minute preset and 90:00 ready restoration passed.",
   );
 } finally {
   await browser.close();

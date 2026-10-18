@@ -11,6 +11,7 @@ import {
   initialState,
   reduce,
   remaining,
+  normalizeState,
 } from "../shared/timer.js";
 const password = "test-only-password-1234",
   secret = "test-only-session-secret-at-least-32-characters";
@@ -343,19 +344,27 @@ test("unauthorized controller connections, cross-origin requests and viewer comm
     await f.close();
   }
 });
-test("expiration displays exactly 00:00 and persists after restart", async () => {
+test("zero transitions into overtime and preserves the deadline after restart", async () => {
   const f = await fixture();
   try {
     await f.command({ type: "setDuration", durationMs: 1000 });
-    await f.command({ type: "start" });
-    f.advance(1001);
-    const s = f.service.getState();
-    assert.equal(s.timer.status, "expired");
-    assert.equal(formatTime(remaining(s.timer, f.now)), "00:00");
+    const started = await f.command({ type: "start" });
+    f.advance(1000);
+    assert.equal(
+      formatTime(remaining(f.service.getState().timer, f.now)),
+      "00:00",
+    );
+    f.advance(1000);
+    assert.equal(
+      formatTime(remaining(f.service.getState().timer, f.now)),
+      "00:01",
+    );
     await f.restart();
-    assert.equal(f.service.getState().timer.remainingMs, 0);
-    assert.equal(f.service.getState().timer.status, "expired");
-    assert.equal(formatTime(-10000), "00:00");
+    const s = f.service.getState();
+    assert.equal(s.timer.status, "running");
+    assert.equal(s.timer.deadline, started.timer.deadline);
+    assert.equal(remaining(s.timer, f.now), -1000);
+    assert.equal(formatTime(-10000), "00:10");
   } finally {
     await f.close();
   }
@@ -429,7 +438,7 @@ test("login throttling and invalid passwords are rejected without issuing cookie
   }
 });
 
-test("a deadline that passes while the server is down recovers expired", async () => {
+test("a deadline that passes while the server is down recovers running in overtime", async () => {
   const f = await fixture();
   try {
     await f.command({ type: "setDuration", durationMs: 1000 });
@@ -437,8 +446,8 @@ test("a deadline that passes while the server is down recovers expired", async (
     f.advance(5000);
     await f.restart();
     const state = f.service.getState();
-    assert.equal(state.timer.status, "expired");
-    assert.equal(formatTime(state.timer.remainingMs), "00:00");
+    assert.equal(state.timer.status, "running");
+    assert.equal(formatTime(remaining(state.timer, f.now)), "00:04");
   } finally {
     await f.close();
   }
@@ -467,4 +476,74 @@ test("configured username and password are both required for login", async () =>
   } finally {
     await f.close();
   }
+});
+
+test("overtime pause, resume, adjustments and the 15-minute preset preserve manual control", async () => {
+  const f = await fixture();
+  try {
+    await f.command({ type: "setDuration", durationMs: 1000 });
+    await f.command({ type: "start" });
+    f.advance(31000);
+    let s = await f.command({ type: "pause" });
+    assert.equal(s.timer.remainingMs, -30000);
+    assert.equal(s.timer.status, "paused");
+    f.advance(60000);
+    await f.restart();
+    s = f.service.getState();
+    assert.equal(remaining(s.timer, f.now), -30000);
+    s = await f.command({ type: "start" });
+    assert.equal(s.timer.deadline, f.now - 30000);
+    f.advance(5000);
+    s = await f.command({ type: "adjust", deltaMs: 300000 });
+    assert.equal(s.timer.status, "running");
+    assert.equal(remaining(s.timer, f.now), 265000);
+    s = await f.command({ type: "adjust", deltaMs: -300000 });
+    assert.equal(remaining(s.timer, f.now), -35000);
+    assert.equal(s.timer.status, "running");
+    s = await f.command({ type: "setDuration", durationMs: 900000 });
+    assert.equal(s.timer.status, "ready");
+    assert.equal(s.timer.deadline, null);
+    assert.equal(formatTime(remaining(s.timer, f.now)), "15:00");
+    s = await f.command({ type: "adjust", deltaMs: -600000 });
+    s = await f.command({ type: "adjust", deltaMs: -600000 });
+    assert.equal(s.timer.status, "paused");
+    assert.equal(s.timer.deadline, null);
+  } finally {
+    await f.close();
+  }
+});
+
+test("an overtime viewer refresh or reconnect retains the original deadline", async () => {
+  const f = await fixture();
+  try {
+    await f.command({ type: "setDuration", durationMs: 1000 });
+    const started = await f.command({ type: "start" });
+    f.advance(62000);
+    let viewer = await f.open("display");
+    let state = await viewer.next("state");
+    assert.equal(state.timer.deadline, started.timer.deadline);
+    assert.equal(formatTime(remaining(state.timer, state.serverNow)), "01:01");
+    viewer.socket.terminate();
+    f.advance(5000);
+    viewer = await f.open("display");
+    state = await viewer.next("state");
+    assert.equal(state.timer.status, "running");
+    assert.equal(formatTime(remaining(state.timer, state.serverNow)), "01:06");
+  } finally {
+    await f.close();
+  }
+});
+
+test("upgrading a previously expired timer never starts it automatically", () => {
+  const s = initialState();
+  s.timer.status = "expired";
+  s.timer.remainingMs = 0;
+  s.timer.pausedAt = 1234;
+  const migrated = normalizeState(s, 60000);
+  assert.equal(migrated.timer.status, "paused");
+  assert.equal(migrated.timer.deadline, null);
+  assert.equal(remaining(migrated.timer, 60000), 0);
+  const started = reduce(migrated, { type: "start" }, 60000);
+  assert.equal(started.timer.status, "running");
+  assert.equal(formatTime(remaining(started.timer, 62000)), "00:02");
 });

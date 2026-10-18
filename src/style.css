@@ -377,7 +377,7 @@ h2 {
 }
 .presets {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(5, 1fr);
   gap: 10px;
   margin-bottom: 20px;
 }
@@ -984,4 +984,10 @@ body:has(.presenter-display) {
   .display-panel button span {
     white-space: nowrap;
   }
+}
+
+.status-pill.overtime {
+  background: #3a2026;
+  color: #ff8b8b;
+  border-color: #75414a;
 }

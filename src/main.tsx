@@ -271,6 +271,7 @@ function Controller({ onLogout }: { onLogout: () => void }) {
   const current = sessions.find((s) => s.id === snapshot?.selectedId);
   const index = sessions.findIndex((s) => s.id === current?.id);
   const running = snapshot?.timer.status === "running";
+  const overtime = !!snapshot && snapshot.timer.status !== "ready" && ms <= 0;
   const disabled = !connected || pending || !snapshot;
   const displayUrl = `${location.origin}/display`;
   return (
@@ -355,14 +356,18 @@ function Controller({ onLogout }: { onLogout: () => void }) {
                   <Radio size={14} />
                   LIVE PREVIEW
                 </span>
-                <span className={`status-pill ${running ? "running" : ""}`}>
-                  {snapshot?.timer.status === "expired"
-                    ? "TIME COMPLETE"
-                    : running
-                      ? "RUNNING"
-                      : snapshot?.timer.status === "paused"
-                        ? "PAUSED"
-                        : "READY TO START"}
+                <span
+                  className={`status-pill ${overtime ? "overtime" : running ? "running" : ""}`}
+                >
+                  {running
+                    ? overtime
+                      ? "OVERTIME"
+                      : "RUNNING"
+                    : snapshot?.timer.status === "paused"
+                      ? overtime
+                        ? "PAUSED · OVERTIME"
+                        : "PAUSED"
+                      : "READY TO START"}
                 </span>
               </div>
               <div className="session-heading">
@@ -376,9 +381,11 @@ function Controller({ onLogout }: { onLogout: () => void }) {
               </div>
               <p className="timer-hint">
                 {running
-                  ? "Countdown is live on all connected displays."
-                  : snapshot?.timer.status === "expired"
-                    ? "Time is complete. Reset or select the next session."
+                  ? overtime
+                    ? "Overtime is counting up on all connected displays."
+                    : "Countdown is live on all connected displays."
+                  : overtime
+                    ? "Overtime is paused. Press Resume to continue counting up."
                     : "Timer is loaded. Press Start when your presenter is ready."}
               </p>
               <div className="transport">
@@ -392,7 +399,7 @@ function Controller({ onLogout }: { onLogout: () => void }) {
                 </button>
                 <button
                   className={`primary start-button ${running ? "pause-button" : ""}`}
-                  disabled={disabled || (!running && ms <= 0)}
+                  disabled={disabled}
                   onClick={() => command({ type: running ? "pause" : "start" })}
                 >
                   {running ? <Pause size={21} /> : <Play size={21} />}{" "}
@@ -448,7 +455,7 @@ function Controller({ onLogout }: { onLogout: () => void }) {
                 <span className="subtle-chip">Always loads paused</span>
               </div>
               <div className="presets">
-                {[30, 45, 60, 90].map((n) => (
+                {[15, 30, 45, 60, 90].map((n) => (
                   <button
                     key={n}
                     disabled={disabled}

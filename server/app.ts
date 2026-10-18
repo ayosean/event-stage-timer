@@ -11,7 +11,7 @@ import {
 import { resolve } from "node:path";
 import { WebSocketServer, WebSocket } from "ws";
 import { z } from "zod";
-import { expire, reduce, type State } from "../shared/timer.js";
+import { normalizeState, reduce, type State } from "../shared/timer.js";
 import { Store } from "./store.js";
 export interface Config {
   username?: string;
@@ -159,9 +159,8 @@ export function createApp(config: Config) {
     });
     res.json({ ok: true });
   });
-  let expiry: ReturnType<typeof setTimeout> | undefined;
   function normalize() {
-    const next = expire(state, now());
+    const next = normalizeState(state, now());
     if (next !== state) {
       store.save(next);
       state = next;
@@ -190,22 +189,7 @@ export function createApp(config: Config) {
       if (ws.readyState === WebSocket.OPEN)
         ws.send(JSON.stringify(snapshot(c.role)));
   }
-  function schedule() {
-    clearTimeout(expiry);
-    if (state.timer.status === "running" && state.timer.deadline !== null) {
-      expiry = setTimeout(
-        () => {
-          normalize();
-          broadcast();
-          schedule();
-        },
-        Math.min(2147483647, Math.max(1, state.timer.deadline - now())),
-      );
-      expiry.unref();
-    }
-  }
   normalize();
-  schedule();
   server.on("upgrade", (req, socket, head) => {
     const path = req.url;
     const role =
@@ -287,7 +271,6 @@ export function createApp(config: Config) {
           const next = reduce(state, parsed.data.command, now());
           store.save(next);
           state = next;
-          schedule();
           broadcast();
           send({ type: "ack", id: parsed.data.id });
         } catch (error) {
@@ -351,7 +334,6 @@ export function createApp(config: Config) {
       return structuredClone(state) as State;
     },
     close: async () => {
-      clearTimeout(expiry);
       clearInterval(heartbeat);
       for (const ws of clients.keys()) ws.terminate();
       await new Promise<void>((resolve) => wss.close(() => resolve()));

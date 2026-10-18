@@ -88,8 +88,35 @@ test("controller, landscape iPad, offline countdown, refresh, and manual present
   await page.getByRole("button", { name: "Start timer", exact: true }).click();
   await expect(viewer.locator("main")).toHaveText("00:00", { timeout: 5000 });
   await expect(viewer.locator(".digits")).toHaveCSS("color", "rgb(255, 0, 0)");
-  await viewer.waitForTimeout(1100);
-  await expect(viewer.locator("main")).toHaveText("00:00");
+  await expect(viewer.locator("main")).toHaveText("00:01", { timeout: 4000 });
+  await expect(page.getByText("OVERTIME", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Pause", exact: true }).click();
+  await expect(
+    page.getByText("PAUSED · OVERTIME", { exact: true }),
+  ).toBeVisible();
+  await viewer.waitForTimeout(100);
+  const pausedOvertime = await viewer.locator("main").innerText();
+  await viewer.waitForTimeout(1200);
+  await expect(viewer.locator("main")).toHaveText(pausedOvertime);
+  await page.getByRole("button", { name: "Resume", exact: true }).click();
+  await expect
+    .poll(() => viewer.locator("main").innerText(), { timeout: 4000 })
+    .not.toBe(pausedOvertime);
+  await viewer.reload();
+  await expect(viewer.locator(".digits")).toHaveCSS("color", "rgb(255, 0, 0)");
+  const beforeOffline = await viewer.locator("main").innerText();
+  await context.setOffline(true);
+  await expect
+    .poll(() => viewer.locator("main").innerText(), { timeout: 4000 })
+    .not.toBe(beforeOffline);
+  await context.setOffline(false);
+  await page.getByRole("button", { name: "15 min", exact: true }).click();
+  await expect(viewer.locator("main")).toHaveText("15:00", { timeout: 15000 });
+  await expect(page.getByText("READY TO START", { exact: true })).toBeVisible();
+  await expect(viewer.locator(".digits")).toHaveCSS(
+    "color",
+    "rgb(255, 255, 255)",
+  );
   await page.getByRole("button", { name: "90 min", exact: true }).click();
   await page.screenshot({
     path: testInfo.outputPath("controller-desktop.png"),
