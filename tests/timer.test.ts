@@ -589,13 +589,13 @@ test("30-second adjustments preserve the running deadline, paused state and over
 
 test("San Francisco clock applies Pacific time, midnight and both daylight-saving transitions", () => {
   for (const [utc, expected] of [
-    ["2026-01-15T20:05:09Z", "12:05 PM"],
-    ["2026-07-15T19:05:09Z", "12:05 PM"],
-    ["2026-01-15T08:00:00Z", "12:00 AM"],
-    ["2026-03-08T09:59:59Z", "1:59 AM"],
-    ["2026-03-08T10:00:00Z", "3:00 AM"],
-    ["2026-11-01T08:59:59Z", "1:59 AM"],
-    ["2026-11-01T09:00:00Z", "1:00 AM"],
+    ["2026-01-15T20:05:09Z", "12:05"],
+    ["2026-07-15T19:05:09Z", "12:05"],
+    ["2026-01-15T08:00:00Z", "12:00"],
+    ["2026-03-08T09:59:59Z", "1:59"],
+    ["2026-03-08T10:00:00Z", "3:00"],
+    ["2026-11-01T08:59:59Z", "1:59"],
+    ["2026-11-01T09:00:00Z", "1:00"],
   ])
     assert.equal(formatPacificTime(Date.parse(utc)), expected);
 });

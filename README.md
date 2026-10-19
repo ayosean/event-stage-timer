@@ -46,7 +46,7 @@ Do not remove or replace the volume during redeploys. Enable Railway volume back
 
 ## Current Time display
 
-Use **Current Time** above the live preview to show San Francisco's current time on every connected display. It shows 12-hour time with hours, minutes and AM/PM, for example `9:05 PM`, in large white type on black. The timezone is fixed to **America/Los_Angeles**, which automatically switches between PST and PDT. The device's own timezone does not change the display.
+Use **Current Time** above the live preview to show San Francisco's current time on every connected display. It shows 12-hour time with just hours and minutes, for example `9:05`, without seconds or AM/PM, in large white type on black. The timezone is fixed to **America/Los_Angeles**, which automatically switches between PST and PDT. The device's own timezone does not change the display.
 
 Switching to Current Time pauses a running countdown and preserves its exact remaining time (including overtime). **Countdown** switches back without starting it; press Start/Resume manually. Start/Resume, a duration preset, reset, or presenter selection also returns to Countdown mode. Duration/presenter changes always load ready. Time adjustments while showing the clock affect the paused countdown without changing display mode.
 

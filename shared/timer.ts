@@ -98,7 +98,7 @@ export function formatPacificTime(epochMs: number): string {
   const parts = pacificClock.formatToParts(epochMs);
   const part = (type: Intl.DateTimeFormatPartTypes) =>
     parts.find((p) => p.type === type)!.value;
-  return `${part("hour")}:${part("minute")} ${part("dayPeriod")}`;
+  return `${part("hour")}:${part("minute")}`;
 }
 export function reduce(input: State, command: Command, now: number): State {
   const state = structuredClone(normalizeState(input, now));
