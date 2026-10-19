@@ -8,6 +8,7 @@ import { WebSocket } from "ws";
 import { createApp } from "../server/app.js";
 import {
   formatTime,
+  formatPacificTime,
   initialState,
   reduce,
   remaining,
@@ -581,6 +582,114 @@ test("30-second adjustments preserve the running deadline, paused state and over
     state = await f.command({ type: "adjust", deltaMs: -30000 });
     assert.equal(state.timer.status, "paused");
     assert.equal(state.timer.deadline, null);
+  } finally {
+    await f.close();
+  }
+});
+
+test("San Francisco clock applies Pacific time, midnight and both daylight-saving transitions", () => {
+  for (const [utc, expected] of [
+    ["2026-01-15T20:05:09Z", "12:05:09 PM"],
+    ["2026-07-15T19:05:09Z", "12:05:09 PM"],
+    ["2026-01-15T08:00:00Z", "12:00:00 AM"],
+    ["2026-03-08T09:59:59Z", "1:59:59 AM"],
+    ["2026-03-08T10:00:00Z", "3:00:00 AM"],
+    ["2026-11-01T08:59:59Z", "1:59:59 AM"],
+    ["2026-11-01T09:00:00Z", "1:00:00 AM"],
+  ])
+    assert.equal(formatPacificTime(Date.parse(utc)), expected);
+});
+
+test("Current Time pauses the countdown and persists across restart without auto-resuming", async () => {
+  const f = await fixture();
+  try {
+    await f.command({ type: "start" });
+    f.advance(12345);
+    const clock = await f.command({ type: "setDisplayMode", mode: "clock" });
+    assert.equal(clock.displayMode, "clock");
+    assert.equal(clock.timer.status, "paused");
+    assert.equal(clock.timer.remainingMs, 5400000 - 12345);
+    assert.equal(clock.timer.deadline, null);
+    f.advance(300000);
+    await f.restart();
+    assert.deepEqual(f.service.getState(), clock);
+    let state = await f.command({ type: "setDisplayMode", mode: "countdown" });
+    assert.equal(state.timer.status, "paused");
+    assert.equal(state.timer.remainingMs, clock.timer.remainingMs);
+    state = await f.command({ type: "start" });
+    assert.equal(state.timer.deadline, f.now + clock.timer.remainingMs);
+    assert.equal(state.displayMode, "countdown");
+  } finally {
+    await f.close();
+  }
+});
+
+test("presets, reset and presenter selection leave clock mode and load ready", async () => {
+  const f = await fixture();
+  try {
+    await f.command({ type: "add", name: "Next session", durationMs: 1800000 });
+    const first = f.service.getState().selectedId;
+    for (const command of [
+      { type: "setDuration", durationMs: 900000 },
+      { type: "reset" },
+      { type: "step", direction: 1 },
+      { type: "select", id: first },
+    ]) {
+      await f.command({ type: "start" });
+      await f.command({ type: "setDisplayMode", mode: "clock" });
+      const state = await f.command(command);
+      assert.equal(state.displayMode, "countdown");
+      assert.equal(state.timer.status, "ready");
+      assert.equal(state.timer.deadline, null);
+    }
+  } finally {
+    await f.close();
+  }
+});
+
+test("read-only viewers restore clock mode on refresh/reconnect and cannot change modes", async () => {
+  const f = await fixture();
+  try {
+    await f.command({ type: "setDisplayMode", mode: "clock" });
+    let viewer = await f.open("display");
+    let state = await viewer.next("state");
+    assert.equal(state.displayMode, "clock");
+    assert.equal(state.serverNow, f.now);
+    viewer.socket.terminate();
+    f.advance(65000);
+    viewer = await f.open("display");
+    state = await viewer.next("state");
+    assert.equal(state.displayMode, "clock");
+    assert.equal(state.serverNow, f.now);
+    assert.equal(state.sessions, undefined);
+    viewer.socket.send(
+      JSON.stringify({
+        type: "command",
+        id: crypto.randomUUID(),
+        revision: state.revision,
+        command: { type: "setDisplayMode", mode: "countdown" },
+      }),
+    );
+    assert.match((await viewer.next("error")).error, /Unauthorized/);
+    assert.equal(f.service.getState().displayMode, "clock");
+  } finally {
+    await f.close();
+  }
+});
+
+test("existing stored countdowns without a display mode upgrade without losing their running deadline", async () => {
+  const f = await fixture();
+  try {
+    const before = await f.command({ type: "start" });
+    const legacy = structuredClone(before);
+    Reflect.deleteProperty(legacy, "displayMode");
+    f.service.store.save(legacy);
+    f.advance(5000);
+    await f.restart();
+    const state = f.service.getState();
+    assert.equal(state.displayMode, "countdown");
+    assert.deepEqual(state.timer, before.timer);
+    assert.equal(state.selectedId, before.selectedId);
   } finally {
     await f.close();
   }

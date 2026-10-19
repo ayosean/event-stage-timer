@@ -10,6 +10,7 @@ export function useTimer(
   const [error, setError] = useState("");
   const [pending, setPending] = useState(false);
   const [ms, setMs] = useState(0);
+  const [serverNow, setServerNow] = useState(0);
   const ws = useRef<WebSocket | null>(null);
   const current = useRef<Snapshot | null>(null);
   const clock = useRef<{ epoch: number; mono: number; bestRTT: number } | null>(
@@ -156,12 +157,11 @@ export function useTimer(
     const tick = () => {
       const s = current.current,
         c = clock.current;
-      if (s && c)
-        setMs(
-          Math.ceil(
-            remaining(s.timer, c.epoch + performance.now() - c.mono) / 1000,
-          ) * 1000,
-        );
+      if (s && c) {
+        const now = c.epoch + performance.now() - c.mono;
+        setServerNow(Math.floor(now / 1000) * 1000);
+        setMs(Math.ceil(remaining(s.timer, now) / 1000) * 1000);
+      }
     };
     tick();
     const interval = setInterval(tick, 50);
@@ -198,6 +198,7 @@ export function useTimer(
     error,
     pending,
     ms,
+    serverNow: serverNow || snapshot?.serverNow || 0,
     command,
     clearError: () => setError(""),
   };

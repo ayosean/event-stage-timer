@@ -4,6 +4,10 @@ const duration = z.number().int().min(1000).max(MAX_MS);
 const id = z.string().uuid();
 const name = z.string().trim().min(1).max(120);
 export const commandSchema = z.discriminatedUnion("type", [
+  z.object({
+    type: z.literal("setDisplayMode"),
+    mode: z.enum(["countdown", "clock"]),
+  }),
   z.object({ type: z.literal("start") }),
   z.object({ type: z.literal("pause") }),
   z.object({ type: z.literal("reset") }),

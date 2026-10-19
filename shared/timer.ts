@@ -14,13 +14,16 @@ export interface Timer {
   startedAt: number | null;
   pausedAt: number | null;
 }
+export type DisplayMode = "countdown" | "clock";
 export interface State {
+  displayMode: DisplayMode;
   revision: number;
   sessions: Session[];
   selectedId: string;
   timer: Timer;
 }
 export interface Snapshot {
+  displayMode: DisplayMode;
   type: "state";
   revision: number;
   timer: Timer;
@@ -48,6 +51,7 @@ export function initialState(): State {
     durationMs: 90 * 60000,
   };
   return {
+    displayMode: "countdown",
     revision: 0,
     sessions: [session],
     selectedId: session.id,
@@ -67,19 +71,35 @@ export function ready(durationMs: number): Timer {
 // Old deployments stopped at zero. Preserve that stopped state during upgrade;
 // only an explicit Start/Resume may start it under the new overtime behavior.
 export function normalizeState(state: State, now: number): State {
-  return state.timer.status === "expired"
-    ? {
-        ...state,
-        revision: state.revision + 1,
-        timer: {
+  const legacyExpired = state.timer.status === "expired";
+  if (state.displayMode && !legacyExpired) return state;
+  return {
+    ...state,
+    displayMode: state.displayMode ?? "countdown",
+    revision: state.revision + 1,
+    timer: legacyExpired
+      ? {
           ...state.timer,
           status: "paused",
           remainingMs: 0,
           deadline: null,
           pausedAt: state.timer.pausedAt ?? now,
-        },
-      }
-    : state;
+        }
+      : state.timer,
+  };
+}
+const pacificClock = new Intl.DateTimeFormat("en-US", {
+  timeZone: "America/Los_Angeles",
+  hour: "numeric",
+  minute: "2-digit",
+  second: "2-digit",
+  hour12: true,
+});
+export function formatPacificTime(epochMs: number): string {
+  const parts = pacificClock.formatToParts(epochMs);
+  const part = (type: Intl.DateTimeFormatPartTypes) =>
+    parts.find((p) => p.type === type)!.value;
+  return `${part("hour")}:${part("minute")}:${part("second")} ${part("dayPeriod")}`;
 }
 export function reduce(input: State, command: Command, now: number): State {
   const state = structuredClone(normalizeState(input, now));
@@ -90,11 +110,22 @@ export function reduce(input: State, command: Command, now: number): State {
     return s;
   };
   const select = (id: string) => {
+    state.displayMode = "countdown";
     state.selectedId = id;
     state.timer = ready(session(id).durationMs);
   };
   switch (command.type) {
+    case "setDisplayMode":
+      if (command.mode === "clock" && timer.status === "running") {
+        timer.remainingMs = remaining(timer, now);
+        timer.status = "paused";
+        timer.deadline = null;
+        timer.pausedAt = now;
+      }
+      state.displayMode = command.mode;
+      break;
     case "start":
+      state.displayMode = "countdown";
       if (timer.status !== "running") {
         timer.status = "running";
         timer.deadline = now + timer.remainingMs;
@@ -111,9 +142,11 @@ export function reduce(input: State, command: Command, now: number): State {
       }
       break;
     case "reset":
+      state.displayMode = "countdown";
       state.timer = ready(timer.durationMs);
       break;
     case "setDuration":
+      state.displayMode = "countdown";
       session(state.selectedId).durationMs = command.durationMs;
       state.timer = ready(command.durationMs);
       break;
@@ -148,8 +181,10 @@ export function reduce(input: State, command: Command, now: number): State {
       const s = session(command.id);
       const changed = s.durationMs !== command.durationMs;
       Object.assign(s, { name: command.name, durationMs: command.durationMs });
-      if (s.id === state.selectedId && changed)
+      if (s.id === state.selectedId && changed) {
+        state.displayMode = "countdown";
         state.timer = ready(s.durationMs);
+      }
       break;
     }
     case "duplicate": {

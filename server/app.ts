@@ -170,6 +170,7 @@ export function createApp(config: Config) {
     normalize();
     return {
       type: "state",
+      displayMode: state.displayMode,
       revision: state.revision,
       timer: state.timer,
       serverNow: now(),

@@ -997,3 +997,20 @@ body:has(.presenter-display) {
     grid-template-columns: repeat(4, 1fr);
   }
 }
+
+.display-mode-controls {
+  display: flex;
+  gap: 8px;
+  padding-bottom: 20px;
+  margin-bottom: 20px;
+  border-bottom: 1px solid #282d37;
+}
+.display-mode-controls button {
+  flex: 1;
+  background: #1a1e27;
+}
+.display-mode-controls button[aria-pressed="true"] {
+  background: #29233d;
+  border-color: #9d8bfa;
+  color: #c9bfff;
+}

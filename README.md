@@ -3,7 +3,7 @@
 A single-service event countdown for a remote controller and any number of read-only presenter displays. React + TypeScript + Vite, Node 24, native WebSockets, and SQLite. No external database or paid real-time service is required.
 
 - `/controller`: password-protected dark production dashboard, rundown editor, presets, live adjustments, and viewer count.
-- `/display`: **only** a huge centered countdown on pure black. White digits while counting down; red `00:00` at zero, then elapsed overtime counting up (`00:01`, `00:02`, …). No names, branding, controls, or scrolling.
+- `/display`: **only** a huge centered countdown on pure black. White digits while counting down; red `00:00` at zero, then elapsed overtime counting up (`00:01`, `00:02`, …). No names, branding, controls, or scrolling. Current Time mode instead shows only a large white Pacific Time clock.
 - `/health`: database health check, returns `{"ok":true}` when healthy.
 
 ## Deploy to Railway
@@ -43,6 +43,14 @@ Do not remove or replace the volume during redeploys. Enable Railway volume back
 - Session names and durations are editable; add, duplicate, delete, and reorder with the up/down arrows. Arrow buttons also work on touch devices and keyboards. Deleting the selected session loads the adjacent session ready. Keep at least one session. Limits: 200 sessions, 120-character names, duration 1 second–999 minutes.
 - Controls disable while disconnected or awaiting acknowledgement. Commands are never queued or retried automatically after network failure. If confirmation times out, review the synchronized timer before issuing another command. Concurrent controllers use revision checks so a stale command is rejected instead of silently applying to a new presenter.
 - Controller logins last 24 hours. Reauthenticate between event days. Expiration/sign-out does not stop the timer or presenter displays. The login cookie is HttpOnly, SameSite=Strict, and Secure in production. Sign-out revokes that session, including its open controller connections.
+
+## Current Time display
+
+Use **Current Time** above the live preview to show San Francisco's current time on every connected display. It shows 12-hour time with seconds and AM/PM, for example `9:05:42 PM`, in large white type on black. The timezone is fixed to **America/Los_Angeles**, which automatically switches between PST and PDT. The device's own timezone does not change the display.
+
+Switching to Current Time pauses a running countdown and preserves its exact remaining time (including overtime). **Countdown** switches back without starting it; press Start/Resume manually. Start/Resume, a duration preset, reset, or presenter selection also returns to Countdown mode. Duration/presenter changes always load ready. Time adjustments while showing the clock affect the paused countdown without changing display mode.
+
+The server persists the selected mode on the volume and sends it to all viewers, including after refresh, reconnect, and server restart. Clock mode uses the same server-time synchronization and monotonic local clock as the countdown; it continues ticking through a temporary disconnection. Display viewers cannot change modes. Screen wake lock applies to both modes.
 
 ## iPad setup
 

@@ -4,6 +4,7 @@ import {
   ArrowDown,
   ArrowUp,
   Check,
+  Clock,
   ChevronLeft,
   ChevronRight,
   Copy,
@@ -21,13 +22,20 @@ import {
   Trash2,
   X,
 } from "lucide-react";
-import { formatTime, type Session } from "../shared/timer";
+import { formatTime, formatPacificTime, type Session } from "../shared/timer";
 import { useTimer } from "./useTimer";
 import "./style.css";
-function Digits({ ms, display = false }: { ms: number; display?: boolean }) {
+function Digits({
+  value,
+  red = false,
+  display = false,
+}: {
+  value: string;
+  red?: boolean;
+  display?: boolean;
+}) {
   const box = useRef<HTMLDivElement>(null),
     text = useRef<HTMLSpanElement>(null);
-  const value = formatTime(ms);
   useLayoutEffect(() => {
     const fit = () => {
       if (!box.current || !text.current) return;
@@ -45,14 +53,15 @@ function Digits({ ms, display = false }: { ms: number; display?: boolean }) {
   return (
     <div
       ref={box}
-      className={`digits ${display ? "display-digits" : ""} ${ms <= 0 ? "zero" : ""}`}
+      className={`digits ${display ? "display-digits" : ""} ${red ? "zero" : ""}`}
     >
       <span ref={text}>{value}</span>
     </div>
   );
 }
 function Display() {
-  const { ms, snapshot } = useTimer("display");
+  const { ms, snapshot, serverNow } = useTimer("display");
+  const clockMode = snapshot?.displayMode === "clock";
   useEffect(() => {
     document.title = "Countdown";
     let disposed = false;
@@ -99,7 +108,13 @@ function Display() {
   }, []);
   return (
     <main className="presenter-display">
-      {snapshot && <Digits ms={ms} display />}
+      {snapshot && (
+        <Digits
+          value={clockMode ? formatPacificTime(serverNow) : formatTime(ms)}
+          red={!clockMode && ms <= 0}
+          display
+        />
+      )}
     </main>
   );
 }
@@ -260,8 +275,16 @@ function SessionEditor({
   );
 }
 function Controller({ onLogout }: { onLogout: () => void }) {
-  const { snapshot, connected, ms, command, error, pending, clearError } =
-    useTimer("controller", true, onLogout);
+  const {
+    snapshot,
+    connected,
+    ms,
+    serverNow,
+    command,
+    error,
+    pending,
+    clearError,
+  } = useTimer("controller", true, onLogout);
   const [custom, setCustom] = useState(""),
     [editor, setEditor] = useState<Session | null | undefined>(undefined),
     [copied, setCopied] = useState(false),
@@ -270,6 +293,7 @@ function Controller({ onLogout }: { onLogout: () => void }) {
   const sessions = snapshot?.sessions ?? [];
   const current = sessions.find((s) => s.id === snapshot?.selectedId);
   const index = sessions.findIndex((s) => s.id === current?.id);
+  const clockMode = snapshot?.displayMode === "clock";
   const running = snapshot?.timer.status === "running";
   const overtime = !!snapshot && snapshot.timer.status !== "ready" && ms <= 0;
   const disabled = !connected || pending || !snapshot;
@@ -351,42 +375,83 @@ function Controller({ onLogout }: { onLogout: () => void }) {
         <div className="dashboard-grid">
           <section className="timer-column">
             <div className="panel timer-panel">
+              <div
+                className="display-mode-controls"
+                role="group"
+                aria-label="Presenter display mode"
+              >
+                <button
+                  disabled={disabled}
+                  aria-pressed={!clockMode}
+                  onClick={() =>
+                    command({ type: "setDisplayMode", mode: "countdown" })
+                  }
+                >
+                  <Timer size={16} />
+                  Countdown
+                </button>
+                <button
+                  disabled={disabled}
+                  aria-pressed={clockMode}
+                  onClick={() =>
+                    command({ type: "setDisplayMode", mode: "clock" })
+                  }
+                >
+                  <Clock size={16} />
+                  Current Time
+                </button>
+              </div>
               <div className="timer-panel-heading">
                 <span className="eyebrow">
                   <Radio size={14} />
                   LIVE PREVIEW
                 </span>
                 <span
-                  className={`status-pill ${overtime ? "overtime" : running ? "running" : ""}`}
+                  className={`status-pill ${!clockMode && overtime ? "overtime" : running ? "running" : ""}`}
                 >
-                  {running
-                    ? overtime
-                      ? "OVERTIME"
-                      : "RUNNING"
-                    : snapshot?.timer.status === "paused"
+                  {clockMode
+                    ? "PACIFIC TIME"
+                    : running
                       ? overtime
-                        ? "PAUSED · OVERTIME"
-                        : "PAUSED"
-                      : "READY TO START"}
+                        ? "OVERTIME"
+                        : "RUNNING"
+                      : snapshot?.timer.status === "paused"
+                        ? overtime
+                          ? "PAUSED · OVERTIME"
+                          : "PAUSED"
+                        : "READY TO START"}
                 </span>
               </div>
               <div className="session-heading">
-                <span className="session-index">
-                  {String(index + 1).padStart(2, "0")}
-                </span>
-                <h2>{current?.name ?? "Connecting…"}</h2>
+                {!clockMode && (
+                  <span className="session-index">
+                    {String(index + 1).padStart(2, "0")}
+                  </span>
+                )}
+                <h2>
+                  {clockMode
+                    ? "San Francisco · Pacific Time (PST/PDT)"
+                    : (current?.name ?? "Connecting…")}
+                </h2>
               </div>
               <div className="preview-clock">
-                <Digits ms={ms} />
+                <Digits
+                  value={
+                    clockMode ? formatPacificTime(serverNow) : formatTime(ms)
+                  }
+                  red={!clockMode && ms <= 0}
+                />
               </div>
               <p className="timer-hint">
-                {running
-                  ? overtime
-                    ? "Overtime is counting up on all connected displays."
-                    : "Countdown is live on all connected displays."
-                  : overtime
-                    ? "Overtime is paused. Press Resume to continue counting up."
-                    : "Timer is loaded. Press Start when your presenter is ready."}
+                {clockMode
+                  ? "Current time is live on all displays. Countdown stays paused until you press Start or Resume."
+                  : running
+                    ? overtime
+                      ? "Overtime is counting up on all connected displays."
+                      : "Countdown is live on all connected displays."
+                    : overtime
+                      ? "Overtime is paused. Press Resume to continue counting up."
+                      : "Timer is loaded. Press Start when your presenter is ready."}
               </p>
               <div className="transport">
                 <button
