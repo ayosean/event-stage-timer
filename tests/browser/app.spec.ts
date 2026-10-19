@@ -170,10 +170,9 @@ test("Pacific Current Time syncs, ticks offline, restores after refresh and retu
     Date.now = () => 42;
   });
   const viewer = await context.newPage();
+  await viewer.clock.install();
   await viewer.goto("/display");
-  await expect(viewer.locator("main")).toHaveText(
-    /^\d{1,2}:\d{2}:\d{2} (AM|PM)$/,
-  );
+  await expect(viewer.locator("main")).toHaveText(/^\d{1,2}:\d{2} (AM|PM)$/);
   await expect
     .poll(async () => {
       const text = await viewer.locator("main").innerText();
@@ -193,14 +192,13 @@ test("Pacific Current Time syncs, ticks offline, restores after refresh and retu
   expect(bounds!.height).toBeLessThanOrEqual(834);
   const previous = await viewer.locator("main").innerText();
   await context.setOffline(true);
+  await viewer.clock.fastForward(61_000);
   await expect
     .poll(() => viewer.locator("main").innerText(), { timeout: 4000 })
     .not.toBe(previous);
   await context.setOffline(false);
   await viewer.reload();
-  await expect(viewer.locator("main")).toHaveText(
-    /^\d{1,2}:\d{2}:\d{2} (AM|PM)$/,
-  );
+  await expect(viewer.locator("main")).toHaveText(/^\d{1,2}:\d{2} (AM|PM)$/);
   await page.reload();
   await expect(
     page.getByRole("button", { name: "Current Time", exact: true }),
@@ -212,9 +210,7 @@ test("Pacific Current Time syncs, ticks offline, restores after refresh and retu
   await viewer.waitForTimeout(1200);
   await expect(viewer.locator("main")).toHaveText(paused);
   await page.getByRole("button", { name: "Current Time", exact: true }).click();
-  await expect(viewer.locator("main")).toHaveText(
-    /^\d{1,2}:\d{2}:\d{2} (AM|PM)$/,
-  );
+  await expect(viewer.locator("main")).toHaveText(/^\d{1,2}:\d{2} (AM|PM)$/);
   await viewer.screenshot({
     path: testInfo.outputPath("pacific-clock-ipad.png"),
   });

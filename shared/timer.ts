@@ -92,14 +92,13 @@ const pacificClock = new Intl.DateTimeFormat("en-US", {
   timeZone: "America/Los_Angeles",
   hour: "numeric",
   minute: "2-digit",
-  second: "2-digit",
   hour12: true,
 });
 export function formatPacificTime(epochMs: number): string {
   const parts = pacificClock.formatToParts(epochMs);
   const part = (type: Intl.DateTimeFormatPartTypes) =>
     parts.find((p) => p.type === type)!.value;
-  return `${part("hour")}:${part("minute")}:${part("second")} ${part("dayPeriod")}`;
+  return `${part("hour")}:${part("minute")} ${part("dayPeriod")}`;
 }
 export function reduce(input: State, command: Command, now: number): State {
   const state = structuredClone(normalizeState(input, now));
