@@ -15,7 +15,12 @@
     "test": "tsx --test tests/*.test.ts",
     "test:e2e": "playwright test",
     "format": "prettier --write .",
-    "format:check": "prettier --check ."
+    "format:check": "prettier --check .",
+    "build:cloudflare": "tsc --noEmit -p cloudflare/tsconfig.json && vite build && wrangler deploy --dry-run --outdir dist/worker",
+    "dev:cloudflare": "wrangler dev --port 8787",
+    "deploy:cloudflare": "npm run build:cloudflare && wrangler deploy",
+    "test:cloudflare": "npm run build:cloudflare && tsx --test tests/cloudflare/*.test.ts",
+    "test:e2e:cloudflare": "playwright test --config playwright.cloudflare.config.ts"
   },
   "dependencies": {
     "express": "^5.1.0",
@@ -27,6 +32,7 @@
     "zod": "^4.0.0"
   },
   "devDependencies": {
+    "@cloudflare/workers-types": "^5.20261019.1",
     "@playwright/test": "^1.56.0",
     "@types/express": "^5.0.3",
     "@types/node": "^24.0.0",
@@ -35,9 +41,11 @@
     "@types/ws": "^8.18.1",
     "@vitejs/plugin-react": "^5.0.0",
     "esbuild": "^0.25.0",
+    "miniflare": "^5.20261019.1-beta",
     "prettier": "^3.9.10",
     "tsx": "^4.20.0",
     "typescript": "^5.9.0",
-    "vite": "^7.1.0"
+    "vite": "^7.1.0",
+    "wrangler": "^4.151.3"
   }
 }

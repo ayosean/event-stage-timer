@@ -17,6 +17,7 @@
     "shared",
     "tests",
     "vite.config.ts",
-    "playwright.config.ts"
+    "playwright.config.ts",
+    "playwright.cloudflare.config.ts"
   ]
 }

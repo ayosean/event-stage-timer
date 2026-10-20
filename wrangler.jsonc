@@ -1,0 +1,20 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "event-stage-timer-backup",
+  "main": "cloudflare/worker.ts",
+  "compatibility_date": "2026-10-01",
+  "workers_dev": true,
+  "preview_urls": false,
+  "assets": {
+    "directory": "./dist/client",
+    "binding": "ASSETS",
+    "run_worker_first": true,
+    "html_handling": "none",
+  },
+  "durable_objects": {
+    "bindings": [{ "name": "TIMER", "class_name": "StageTimer" }],
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["StageTimer"] }],
+  "vars": { "ADMIN_USERNAME": "avteam" },
+  "observability": { "enabled": true, "head_sampling_rate": 0.1 },
+}

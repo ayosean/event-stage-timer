@@ -1,3 +1,5 @@
+> **Cloudflare standby:** This is the separate `cloudflare-backup` branch. See [CLOUDFLARE.md](CLOUDFLARE.md) to deploy it without changing the live Railway service.
+
 # Event Stage Timer
 
 A single-service event countdown for a remote controller and any number of read-only presenter displays. React + TypeScript + Vite, Node 24, native WebSockets, and SQLite. No external database or paid real-time service is required.
