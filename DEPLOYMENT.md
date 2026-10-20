@@ -28,3 +28,7 @@ node tests/live-smoke.mjs
 ```
 
 Screenshots are written to the ignored `test-results/live` directory (or `LIVE_ARTIFACT_DIR`). The script uses `HTTPS_PROXY` if supplied. It does not disable TLS verification.
+
+## Cloudflare backup
+
+A separate standby deployment on Cloudflare Workers lives in [`cloudflare/`](cloudflare/README.md). It has its own URL, secrets, and timer state, and the Railway build does not use any file in that folder.
