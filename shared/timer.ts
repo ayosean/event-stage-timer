@@ -178,12 +178,9 @@ export function reduce(input: State, command: Command, now: number): State {
       break;
     case "update": {
       const s = session(command.id);
-      const changed = s.durationMs !== command.durationMs;
       Object.assign(s, { name: command.name, durationMs: command.durationMs });
-      if (s.id === state.selectedId && changed) {
-        state.displayMode = "countdown";
-        state.timer = ready(s.durationMs);
-      }
+      // Rundown edits only change the saved agenda. Loading a session is a
+      // separate command; never replace the timer or clock during an edit.
       break;
     }
     case "duplicate": {
@@ -198,6 +195,13 @@ export function reduce(input: State, command: Command, now: number): State {
       break;
     }
     case "delete": {
+      if (
+        command.id === state.selectedId &&
+        (state.displayMode === "clock" || state.timer.status !== "ready")
+      )
+        throw new Error(
+          "This session is in use. Load another session before deleting it.",
+        );
       if (state.sessions.length === 1)
         throw new Error("Keep at least one session.");
       const index = state.sessions.findIndex(

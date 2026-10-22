@@ -1014,3 +1014,21 @@ body:has(.presenter-display) {
   border-color: #9d8bfa;
   color: #c9bfff;
 }
+
+.rundown-edit-note {
+  margin: 0;
+  padding: 0 22px 16px;
+  color: #8f97ac;
+  font-size: 12px;
+  line-height: 1.6;
+}
+.row-actions .icon-button {
+  width: 34px;
+  height: 34px;
+}
+.row-actions .session-edit {
+  width: auto;
+  gap: 5px;
+  padding: 0 9px;
+  font-size: 12px;
+}

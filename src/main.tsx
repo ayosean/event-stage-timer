@@ -256,12 +256,11 @@ function SessionEditor({
             onChange={(e) => setMinutes(Number(e.target.value))}
           />
         </label>
-        {session && (
-          <p className="muted small">
-            Changing the current session’s duration loads it ready and requires
-            Start.
-          </p>
-        )}
+        <p className="muted small">
+          Saving updates the rundown without changing the current countdown or
+          clock. The saved duration applies when you load the session. Use the
+          +/− controls to adjust the timer currently on screen.
+        </p>
         <div className="dialog-actions">
           <button type="button" onClick={onClose}>
             Cancel
@@ -618,6 +617,10 @@ function Controller({ onLogout }: { onLogout: () => void }) {
                 <Plus size={21} />
               </button>
             </div>
+            <p className="rundown-edit-note">
+              Edit, add, and reorder freely—the current display keeps going.
+              Select a session to load its timer paused.
+            </p>
             <div className="rundown-meta">
               <span>PRESENTER / SESSION</span>
               <span>DURATION</span>
@@ -636,6 +639,7 @@ function Controller({ onLogout }: { onLogout: () => void }) {
                     </span>
                     <button
                       className="session-select"
+                      title="Load this session paused (changes the current display)"
                       disabled={disabled}
                       onClick={() =>
                         command({ type: "select", id: session.id })
@@ -674,12 +678,14 @@ function Controller({ onLogout }: { onLogout: () => void }) {
                     </button>
                     <span className="row-action-space" />
                     <button
-                      className="icon-button"
+                      className="icon-button session-edit"
                       aria-label={`Edit ${session.name}`}
+                      title="Edit agenda only; keep the current display running"
                       disabled={disabled}
                       onClick={() => setEditor(session)}
                     >
                       <Pencil size={14} />
+                      Edit
                     </button>
                     <button
                       className="icon-button"
@@ -694,7 +700,18 @@ function Controller({ onLogout }: { onLogout: () => void }) {
                     <button
                       className="icon-button"
                       aria-label={`Delete ${session.name}`}
-                      disabled={disabled || sessions.length === 1}
+                      disabled={
+                        disabled ||
+                        sessions.length === 1 ||
+                        (current?.id === session.id &&
+                          (clockMode || snapshot?.timer.status !== "ready"))
+                      }
+                      title={
+                        current?.id === session.id &&
+                        (clockMode || snapshot?.timer.status !== "ready")
+                          ? "Session in use: load another session before deleting"
+                          : "Delete this agenda session"
+                      }
                       onClick={() => setDeleteId(session.id)}
                     >
                       <Trash2 size={14} />

@@ -219,3 +219,145 @@ test("Pacific Current Time syncs, ticks offline, restores after refresh and retu
   await expect(page.getByText("READY TO START", { exact: true })).toBeVisible();
   await context.close();
 });
+
+test("live rundown edits, additions and reordering preserve countdown and Pacific clock", async ({
+  page,
+  browser,
+}, testInfo) => {
+  await page.goto("/controller");
+  await page.getByLabel("Username", { exact: true }).fill("admin");
+  await page.getByLabel("Admin password").fill("browser-test-only-password");
+  await page.getByRole("button", { name: "Open controller" }).click();
+  await expect(page.getByText("Connected", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "90 min", exact: true }).click();
+  await page.getByRole("button", { name: "Start timer", exact: true }).click();
+  const context = await browser.newContext({
+    viewport: { width: 1194, height: 834 },
+  });
+  const viewer = await context.newPage();
+  await viewer.goto("/display");
+  await expect(viewer.locator("main")).toHaveText("89:59", { timeout: 5000 });
+  const snapshot = () =>
+    viewer.evaluate(
+      () =>
+        new Promise<{ timer: unknown; displayMode: string }>(
+          (resolve, reject) => {
+            const socket = new WebSocket(
+              `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws/display`,
+            );
+            const timeout = setTimeout(() => {
+              socket.close();
+              reject(new Error("Snapshot timed out"));
+            }, 5000);
+            socket.onmessage = (event) => {
+              const data = JSON.parse(event.data);
+              if (data.type === "state") {
+                clearTimeout(timeout);
+                socket.close();
+                resolve(data);
+              }
+            };
+          },
+        ),
+    );
+  const running = await snapshot();
+  const name = await page
+    .locator(".current-session .session-select > span")
+    .innerText();
+  const updated = `Edited live presenter · ${testInfo.project.name}`;
+  const added = `Added during show · ${testInfo.project.name}`;
+  await page.getByRole("button", { name: `Edit ${name}`, exact: true }).click();
+  await page.getByLabel("Presenter / session name").fill(updated);
+  await page.getByLabel("Duration in minutes").fill("20");
+  await page.getByRole("button", { name: "Save changes", exact: true }).click();
+  await expect(
+    page.locator(".current-session .session-select > span"),
+  ).toHaveText(updated);
+  expect((await snapshot()).timer).toEqual(running.timer);
+  await expect(
+    page.getByRole("button", { name: `Delete ${updated}`, exact: true }),
+  ).toBeDisabled();
+  await page
+    .locator(".rundown-header")
+    .getByRole("button", { name: "Add session", exact: true })
+    .click();
+  await page.getByLabel("Presenter / session name").fill(added);
+  await page.getByLabel("Duration in minutes").fill("35");
+  await page
+    .getByRole("dialog")
+    .getByRole("button", { name: "Add session", exact: true })
+    .click();
+  await expect(
+    page.getByRole("button", { name: added, exact: true }),
+  ).toBeVisible();
+  await page
+    .getByRole("button", { name: `Move ${added} up`, exact: true })
+    .click();
+  await expect(page.locator(".session-list li").last()).toContainText(updated);
+  expect((await snapshot()).timer).toEqual(running.timer);
+  await page.getByRole("button", { name: "Current Time", exact: true }).click();
+  await expect(page.getByText("PACIFIC TIME", { exact: true })).toBeVisible();
+  const clock = await snapshot();
+  await page
+    .getByRole("button", { name: `Edit ${updated}`, exact: true })
+    .click();
+  await page.getByLabel("Duration in minutes").fill("25");
+  await page.getByRole("button", { name: "Save changes", exact: true }).click();
+  await expect(page.locator(".current-session .row-duration")).toHaveText(
+    "25:00",
+  );
+  await page
+    .getByRole("button", { name: `Duplicate ${updated}`, exact: true })
+    .click();
+  await expect(
+    page.getByRole("button", { name: `${updated} (copy)`, exact: true }),
+  ).toBeVisible();
+  await page
+    .getByRole("button", { name: `Move ${updated} up`, exact: true })
+    .click();
+  await expect(page.locator(".current-session .row-number")).not.toHaveText(
+    String(await page.locator(".session-list li").count()).padStart(2, "0"),
+  );
+  const after = await snapshot();
+  expect(after.displayMode).toBe("clock");
+  expect(after.timer).toEqual(clock.timer);
+  await viewer.reload();
+  await expect(viewer.locator("main")).toHaveText(/^\d{1,2}:\d{2}$/);
+  await expect(
+    page.getByRole("button", { name: "Current Time", exact: true }),
+  ).toHaveAttribute("aria-pressed", "true");
+  await page.getByRole("button", { name: "Countdown", exact: true }).click();
+  await expect(page.getByText("PAUSED", { exact: true })).toBeVisible();
+  const paused = await viewer.locator("main").innerText();
+  await viewer.waitForTimeout(1100);
+  await expect(viewer.locator("main")).toHaveText(paused);
+  await page.locator(".current-session .session-select").click();
+  await expect(viewer.locator("main")).toHaveText("25:00");
+  await expect(page.getByText("READY TO START", { exact: true })).toBeVisible();
+  // Restore the prior rundown so the next browser project starts from the
+  // same agenda, with its selected session at the end for Next-presenter tests.
+  for (const obsolete of [added, `${updated} (copy)`]) {
+    await page
+      .getByRole("button", { name: `Delete ${obsolete}`, exact: true })
+      .click();
+    await page.getByRole("button", { name: "Delete", exact: true }).click();
+    await expect(
+      page.getByRole("button", { name: `Delete ${obsolete}`, exact: true }),
+    ).toHaveCount(0);
+  }
+  await page
+    .getByRole("button", { name: `Edit ${updated}`, exact: true })
+    .click();
+  await page.getByLabel("Presenter / session name").fill(name);
+  await page.getByLabel("Duration in minutes").fill("90");
+  await page.getByRole("button", { name: "Save changes", exact: true }).click();
+  await expect(
+    page.locator(".current-session .session-select > span"),
+  ).toHaveText(name);
+  await page.getByRole("button", { name: "90 min", exact: true }).click();
+  await page.setViewportSize({ width: 390, height: 844 });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(
+    390,
+  );
+  await context.close();
+});

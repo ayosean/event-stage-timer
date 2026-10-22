@@ -1,7 +1,7 @@
 name: Application checks
 on:
   push:
-    branches: [main]
+    branches: [main, fix/live-rundown-editing]
   pull_request:
 permissions:
   contents: read
