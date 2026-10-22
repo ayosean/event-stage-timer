@@ -3,6 +3,13 @@ import { formatPacificTime, type Snapshot } from "../../shared/timer";
 
 async function login(page: Page) {
   await page.goto("/controller");
+  // Authentication loads asynchronously. Wait for the login form or an
+  // authenticated controller before deciding which path this tab needs.
+  await expect(
+    page
+      .getByLabel("Username", { exact: true })
+      .or(page.getByText("Connected", { exact: true })),
+  ).toBeVisible();
   if (await page.getByLabel("Username", { exact: true }).isVisible()) {
     await page.getByLabel("Username", { exact: true }).fill("admin");
     await page.getByLabel("Admin password").fill("browser-test-only-password");
