@@ -178,6 +178,8 @@ export function createApp(config: Config) {
         ? {
             sessions: state.sessions,
             selectedId: state.selectedId,
+            preparedDurationMs: state.preparedDurationMs,
+            liveSession: state.liveSession,
             viewers: [...clients.values()].filter((c) => c.role === "display")
               .length,
           }

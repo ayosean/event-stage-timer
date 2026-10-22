@@ -22,7 +22,12 @@ import {
   Trash2,
   X,
 } from "lucide-react";
-import { formatTime, formatPacificTime, type Session } from "../shared/timer";
+import {
+  formatTime,
+  formatPacificTime,
+  type Command,
+  type Session,
+} from "../shared/timer";
 import { useTimer } from "./useTimer";
 import "./style.css";
 function Digits({
@@ -258,8 +263,8 @@ function SessionEditor({
         </label>
         <p className="muted small">
           Saving updates the rundown without changing the current countdown or
-          clock. The saved duration applies when you load the session. Use the
-          +/− controls to adjust the timer currently on screen.
+          clock. The saved duration applies when you send the prepared session
+          to LIVE. Use the +/− controls to adjust the timer currently on screen.
         </p>
         <div className="dialog-actions">
           <button type="button" onClick={onClose}>
@@ -270,6 +275,44 @@ function SessionEditor({
           </button>
         </div>
       </form>
+    </dialog>
+  );
+}
+function LiveConfirmation({
+  label,
+  disabled,
+  onConfirm,
+  onCancel,
+}: {
+  label: string;
+  disabled: boolean;
+  onConfirm: () => void;
+  onCancel: () => void;
+}) {
+  const ref = useRef<HTMLDialogElement>(null);
+  useEffect(() => {
+    const dialog = ref.current;
+    dialog?.showModal();
+    return () => dialog?.close();
+  }, []);
+  return (
+    <dialog
+      ref={ref}
+      onCancel={onCancel}
+      aria-labelledby="live-confirm-heading"
+    >
+      <h2 id="live-confirm-heading">Change LIVE output?</h2>
+      <p>{label}</p>
+      <p className="muted">
+        This changes what every presenter display shows. The current output
+        keeps going until you confirm.
+      </p>
+      <div className="dialog-actions">
+        <button onClick={onCancel}>Keep LIVE unchanged</button>
+        <button className="primary" disabled={disabled} onClick={onConfirm}>
+          Confirm LIVE change
+        </button>
+      </div>
     </dialog>
   );
 }
@@ -288,15 +331,30 @@ function Controller({ onLogout }: { onLogout: () => void }) {
     [editor, setEditor] = useState<Session | null | undefined>(undefined),
     [copied, setCopied] = useState(false),
     [notice, setNotice] = useState(""),
-    [deleteId, setDeleteId] = useState<string | null>(null);
+    [deleteId, setDeleteId] = useState<string | null>(null),
+    [liveChange, setLiveChange] = useState<{
+      command: Command;
+      revision: number;
+      label: string;
+    } | null>(null);
   const sessions = snapshot?.sessions ?? [];
   const current = sessions.find((s) => s.id === snapshot?.selectedId);
   const index = sessions.findIndex((s) => s.id === current?.id);
+  const liveSession = snapshot?.liveSession;
+  const liveIndex = sessions.findIndex((s) => s.id === liveSession?.id);
   const clockMode = snapshot?.displayMode === "clock";
   const running = snapshot?.timer.status === "running";
   const overtime = !!snapshot && snapshot.timer.status !== "ready" && ms <= 0;
   const disabled = !connected || pending || !snapshot;
   const displayUrl = `${location.origin}/display`;
+  function changeLive(next: Command, label: string) {
+    if (!snapshot || disabled) return;
+    if (next.type === "setDisplayMode" && next.mode === snapshot.displayMode)
+      return;
+    if (clockMode || snapshot.timer.status !== "ready")
+      setLiveChange({ command: next, revision: snapshot.revision, label });
+    else command(next, snapshot.revision);
+  }
   return (
     <div className="app-shell">
       <header className="topbar">
@@ -377,13 +435,16 @@ function Controller({ onLogout }: { onLogout: () => void }) {
               <div
                 className="display-mode-controls"
                 role="group"
-                aria-label="Presenter display mode"
+                aria-label="LIVE presenter display mode"
               >
                 <button
                   disabled={disabled}
                   aria-pressed={!clockMode}
                   onClick={() =>
-                    command({ type: "setDisplayMode", mode: "countdown" })
+                    changeLive(
+                      { type: "setDisplayMode", mode: "countdown" },
+                      "Show the existing countdown on LIVE, without starting it.",
+                    )
                   }
                 >
                   <Timer size={16} />
@@ -393,7 +454,10 @@ function Controller({ onLogout }: { onLogout: () => void }) {
                   disabled={disabled}
                   aria-pressed={clockMode}
                   onClick={() =>
-                    command({ type: "setDisplayMode", mode: "clock" })
+                    changeLive(
+                      { type: "setDisplayMode", mode: "clock" },
+                      "Show Pacific current time on LIVE and pause the existing countdown.",
+                    )
                   }
                 >
                   <Clock size={16} />
@@ -403,7 +467,7 @@ function Controller({ onLogout }: { onLogout: () => void }) {
               <div className="timer-panel-heading">
                 <span className="eyebrow">
                   <Radio size={14} />
-                  LIVE PREVIEW
+                  LIVE OUTPUT
                 </span>
                 <span
                   className={`status-pill ${!clockMode && overtime ? "overtime" : running ? "running" : ""}`}
@@ -424,13 +488,15 @@ function Controller({ onLogout }: { onLogout: () => void }) {
               <div className="session-heading">
                 {!clockMode && (
                   <span className="session-index">
-                    {String(index + 1).padStart(2, "0")}
+                    {liveIndex >= 0
+                      ? String(liveIndex + 1).padStart(2, "0")
+                      : "LIVE"}
                   </span>
                 )}
                 <h2>
                   {clockMode
                     ? "San Francisco · Pacific Time (PST/PDT)"
-                    : (current?.name ?? "Connecting…")}
+                    : (liveSession?.name ?? "Connecting…")}
                 </h2>
               </div>
               <div className="preview-clock">
@@ -454,17 +520,17 @@ function Controller({ onLogout }: { onLogout: () => void }) {
               </p>
               <div className="transport">
                 <button
-                  disabled={disabled || index <= 0}
-                  aria-label="Previous presenter"
-                  title="Previous presenter — loads paused"
-                  onClick={() => command({ type: "step", direction: -1 })}
-                >
-                  <ChevronLeft size={22} />
-                </button>
-                <button
                   className={`primary start-button ${running ? "pause-button" : ""}`}
                   disabled={disabled}
-                  onClick={() => command({ type: running ? "pause" : "start" })}
+                  onClick={() => {
+                    if (running) command({ type: "pause" });
+                    else if (clockMode)
+                      changeLive(
+                        { type: "start" },
+                        "Start or resume the existing LIVE countdown.",
+                      );
+                    else command({ type: "start" });
+                  }}
                 >
                   {running ? <Pause size={21} /> : <Play size={21} />}{" "}
                   {running
@@ -474,17 +540,14 @@ function Controller({ onLogout }: { onLogout: () => void }) {
                       : "Start timer"}
                 </button>
                 <button
-                  disabled={disabled || index >= sessions.length - 1}
-                  aria-label="Next presenter"
-                  title="Next presenter — loads paused"
-                  onClick={() => command({ type: "step", direction: 1 })}
-                >
-                  <ChevronRight size={22} />
-                </button>
-                <button
                   disabled={disabled}
                   className="reset-button"
-                  onClick={() => command({ type: "reset" })}
+                  onClick={() =>
+                    changeLive(
+                      { type: "reset" },
+                      "Reset the LIVE countdown to its original loaded duration, paused.",
+                    )
+                  }
                 >
                   <RotateCcw size={17} />
                   <span>Reset</span>
@@ -519,8 +582,34 @@ function Controller({ onLogout }: { onLogout: () => void }) {
             </div>
             <section className="panel duration-panel">
               <div className="section-heading">
-                <h2>Set duration</h2>
-                <span className="subtle-chip">Always loads paused</span>
+                <h2>Prepare next timer</h2>
+                <span className="subtle-chip">OFF AIR · Safe to edit</span>
+              </div>
+              <div className="prepare-navigation">
+                <button
+                  disabled={disabled || index <= 0}
+                  aria-label="Previous presenter"
+                  title="Prepare previous presenter; LIVE stays unchanged"
+                  onClick={() => command({ type: "step", direction: -1 })}
+                >
+                  <ChevronLeft size={18} /> Previous
+                </button>
+                <button
+                  disabled={disabled || index >= sessions.length - 1}
+                  aria-label="Next presenter"
+                  title="Prepare next presenter; LIVE stays unchanged"
+                  onClick={() => command({ type: "step", direction: 1 })}
+                >
+                  Next <ChevronRight size={18} />
+                </button>
+              </div>
+              <div className="prepared-summary">
+                <span>{current?.name ?? "Preparing…"}</span>
+                <strong>{formatTime(snapshot?.preparedDurationMs ?? 0)}</strong>
+                <p>
+                  Session selection, presets, and all rundown edits stay off
+                  air. LIVE output keeps going.
+                </p>
               </div>
               <div className="presets">
                 {[15, 30, 45, 60, 90].map((n) => (
@@ -528,7 +617,9 @@ function Controller({ onLogout }: { onLogout: () => void }) {
                     key={n}
                     disabled={disabled}
                     className={
-                      snapshot?.timer.durationMs === n * 60000 ? "selected" : ""
+                      snapshot?.preparedDurationMs === n * 60000
+                        ? "selected"
+                        : ""
                     }
                     onClick={() =>
                       command({ type: "setDuration", durationMs: n * 60000 })
@@ -567,9 +658,34 @@ function Controller({ onLogout }: { onLogout: () => void }) {
                   <span>min</span>
                 </div>
                 <button disabled={disabled || !custom} type="submit">
-                  Load timer
+                  Prepare timer
                 </button>
               </form>
+              <div className="prepared-actions">
+                <button
+                  className="primary"
+                  disabled={disabled}
+                  onClick={() =>
+                    changeLive(
+                      { type: "startPrepared" },
+                      `Start ${current?.name ?? "the prepared timer"} on LIVE.`,
+                    )
+                  }
+                >
+                  Start prepared LIVE
+                </button>
+                <button
+                  disabled={disabled}
+                  onClick={() =>
+                    changeLive(
+                      { type: "loadPrepared" },
+                      `Replace LIVE with ${current?.name ?? "the prepared timer"}, paused.`,
+                    )
+                  }
+                >
+                  Show prepared paused
+                </button>
+              </div>
             </section>
             <section className="panel display-panel">
               <span className="display-icon">
@@ -618,8 +734,9 @@ function Controller({ onLogout }: { onLogout: () => void }) {
               </button>
             </div>
             <p className="rundown-edit-note">
-              Edit, add, and reorder freely—the current display keeps going.
-              Select a session to load its timer paused.
+              Edit, add, delete, reorder, or select sessions freely. Everything
+              here stays off air until you explicitly send a prepared timer to
+              LIVE.
             </p>
             <div className="rundown-meta">
               <span>PRESENTER / SESSION</span>
@@ -639,15 +756,17 @@ function Controller({ onLogout }: { onLogout: () => void }) {
                     </span>
                     <button
                       className="session-select"
-                      title="Load this session paused (changes the current display)"
+                      aria-label={`Prepare ${session.name}`}
+                      title="Prepare this session; LIVE output stays unchanged"
                       disabled={disabled}
                       onClick={() =>
                         command({ type: "select", id: session.id })
                       }
                     >
                       <span>{session.name}</span>
-                      {current?.id === session.id && (
-                        <small>{running ? "ON STAGE" : "SELECTED"}</small>
+                      {current?.id === session.id && <small>PREPARED</small>}
+                      {session.id === liveSession?.id && (
+                        <small className="live-row-label">LIVE SOURCE</small>
                       )}
                     </button>
                     <span className="row-duration">
@@ -700,18 +819,8 @@ function Controller({ onLogout }: { onLogout: () => void }) {
                     <button
                       className="icon-button"
                       aria-label={`Delete ${session.name}`}
-                      disabled={
-                        disabled ||
-                        sessions.length === 1 ||
-                        (current?.id === session.id &&
-                          (clockMode || snapshot?.timer.status !== "ready"))
-                      }
-                      title={
-                        current?.id === session.id &&
-                        (clockMode || snapshot?.timer.status !== "ready")
-                          ? "Session in use: load another session before deleting"
-                          : "Delete this agenda session"
-                      }
+                      disabled={disabled || sessions.length === 1}
+                      title="Delete from rundown; LIVE output stays unchanged"
                       onClick={() => setDeleteId(session.id)}
                     >
                       <Trash2 size={14} />
@@ -750,8 +859,9 @@ function Controller({ onLogout }: { onLogout: () => void }) {
               <div>
                 <strong>You call the start.</strong>
                 <p>
-                  Switching sessions always loads the timer paused. Nothing
-                  starts automatically.
+                  Selecting sessions only prepares them. Use Start prepared LIVE
+                  to take one on air, or Show prepared paused to load it without
+                  starting.
                 </p>
               </div>
             </div>
@@ -777,6 +887,17 @@ function Controller({ onLogout }: { onLogout: () => void }) {
           <span>SERVER-SYNCHRONIZED TIMING</span>
         </footer>
       </main>
+      {liveChange && (
+        <LiveConfirmation
+          label={liveChange.label}
+          disabled={disabled}
+          onCancel={() => setLiveChange(null)}
+          onConfirm={() => {
+            command(liveChange.command, liveChange.revision);
+            setLiveChange(null);
+          }}
+        />
+      )}
       {editor !== undefined && (
         <SessionEditor
           session={editor}

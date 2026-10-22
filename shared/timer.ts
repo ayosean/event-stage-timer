@@ -20,6 +20,8 @@ export interface State {
   revision: number;
   sessions: Session[];
   selectedId: string;
+  preparedDurationMs: number;
+  liveSession: Session;
   timer: Timer;
 }
 export interface Snapshot {
@@ -30,6 +32,8 @@ export interface Snapshot {
   serverNow: number;
   sessions?: Session[];
   selectedId?: string;
+  preparedDurationMs?: number;
+  liveSession?: Session;
   viewers?: number;
   commandId?: string;
 }
@@ -55,6 +59,8 @@ export function initialState(): State {
     revision: 0,
     sessions: [session],
     selectedId: session.id,
+    preparedDurationMs: session.durationMs,
+    liveSession: { ...session },
     timer: ready(session.durationMs),
   };
 }
@@ -72,10 +78,24 @@ export function ready(durationMs: number): Timer {
 // only an explicit Start/Resume may start it under the new overtime behavior.
 export function normalizeState(state: State, now: number): State {
   const legacyExpired = state.timer.status === "expired";
-  if (state.displayMode && !legacyExpired) return state;
+  if (
+    state.displayMode &&
+    state.preparedDurationMs !== undefined &&
+    state.liveSession &&
+    !legacyExpired
+  )
+    return state;
+  const selected =
+    state.sessions.find((session) => session.id === state.selectedId) ??
+    state.sessions[0];
   return {
     ...state,
     displayMode: state.displayMode ?? "countdown",
+    preparedDurationMs: state.preparedDurationMs ?? selected.durationMs,
+    liveSession: state.liveSession ?? {
+      ...selected,
+      durationMs: state.timer.durationMs,
+    },
     revision: state.revision + 1,
     timer: legacyExpired
       ? {
@@ -109,11 +129,27 @@ export function reduce(input: State, command: Command, now: number): State {
     return s;
   };
   const select = (id: string) => {
-    state.displayMode = "countdown";
     state.selectedId = id;
-    state.timer = ready(session(id).durationMs);
+    state.preparedDurationMs = session(id).durationMs;
+  };
+  const publish = () => {
+    state.liveSession = {
+      ...session(state.selectedId),
+      durationMs: state.preparedDurationMs,
+    };
+    state.timer = ready(state.preparedDurationMs);
+    state.displayMode = "countdown";
   };
   switch (command.type) {
+    case "loadPrepared":
+      publish();
+      break;
+    case "startPrepared":
+      publish();
+      state.timer.status = "running";
+      state.timer.startedAt = now;
+      state.timer.deadline = now + state.timer.remainingMs;
+      break;
     case "setDisplayMode":
       if (command.mode === "clock" && timer.status === "running") {
         timer.remainingMs = remaining(timer, now);
@@ -145,9 +181,8 @@ export function reduce(input: State, command: Command, now: number): State {
       state.timer = ready(timer.durationMs);
       break;
     case "setDuration":
-      state.displayMode = "countdown";
       session(state.selectedId).durationMs = command.durationMs;
-      state.timer = ready(command.durationMs);
+      state.preparedDurationMs = command.durationMs;
       break;
     case "adjust": {
       const value = Math.min(MAX_MS, remaining(timer, now) + command.deltaMs);
@@ -179,6 +214,7 @@ export function reduce(input: State, command: Command, now: number): State {
     case "update": {
       const s = session(command.id);
       Object.assign(s, { name: command.name, durationMs: command.durationMs });
+      if (s.id === state.selectedId) state.preparedDurationMs = s.durationMs;
       // Rundown edits only change the saved agenda. Loading a session is a
       // separate command; never replace the timer or clock during an edit.
       break;
@@ -195,13 +231,6 @@ export function reduce(input: State, command: Command, now: number): State {
       break;
     }
     case "delete": {
-      if (
-        command.id === state.selectedId &&
-        (state.displayMode === "clock" || state.timer.status !== "ready")
-      )
-        throw new Error(
-          "This session is in use. Load another session before deleting it.",
-        );
       if (state.sessions.length === 1)
         throw new Error("Keep at least one session.");
       const index = state.sessions.findIndex(

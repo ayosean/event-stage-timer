@@ -172,25 +172,29 @@ test("add five minutes while running extends deadline without restarting", async
     await f.close();
   }
 });
-test("30-minute preset, custom duration, and reset always remain ready", async () => {
+test("presets and custom durations stay off air until explicitly published, paused or started", async () => {
   const f = await fixture();
   try {
-    for (const cmd of [
-      { type: "setDuration", durationMs: 1800000 },
-      { type: "setDuration", durationMs: 125000 },
-      { type: "reset" },
-    ]) {
-      await f.command({ type: "start" });
-      const s = await f.command(cmd);
-      assert.equal(s.timer.status, "ready");
-      assert.equal(s.timer.deadline, null);
-      assert.equal(s.timer.remainingMs, s.timer.durationMs);
+    const live = await f.command({ type: "start" });
+    for (const durationMs of [1800000, 125000]) {
+      const prepared = await f.command({ type: "setDuration", durationMs });
+      assert.deepEqual(prepared.timer, live.timer);
+      assert.equal(prepared.preparedDurationMs, durationMs);
     }
+    let output = await f.command({ type: "loadPrepared" });
+    assert.equal(output.timer.status, "ready");
+    assert.equal(output.timer.deadline, null);
+    assert.equal(output.timer.remainingMs, 125000);
+    output = await f.command({ type: "startPrepared" });
+    assert.equal(output.timer.deadline, f.now + 125000);
+    output = await f.command({ type: "reset" });
+    assert.equal(output.timer.status, "ready");
+    assert.equal(output.timer.deadline, null);
   } finally {
     await f.close();
   }
 });
-test("next, previous, and direct session selection never auto-start", async () => {
+test("next, previous, and session selection only prepare; LIVE keeps its deadline", async () => {
   const f = await fixture();
   try {
     await f.command({
@@ -199,16 +203,21 @@ test("next, previous, and direct session selection never auto-start", async () =
       durationMs: 1800000,
     });
     const first = f.service.getState().selectedId;
-    for (const cmd of [
+    const live = await f.command({ type: "start" });
+    for (const command of [
       { type: "step", direction: 1 },
       { type: "step", direction: -1 },
       { type: "select", id: first },
     ]) {
-      await f.command({ type: "start" });
-      const s = await f.command(cmd);
-      assert.equal(s.timer.status, "ready");
-      assert.equal(s.timer.deadline, null);
+      const state = await f.command(command);
+      assert.deepEqual(state.timer, live.timer);
+      assert.deepEqual(state.liveSession, live.liveSession);
     }
+    await f.command({ type: "step", direction: 1 });
+    const ready = await f.command({ type: "loadPrepared" });
+    assert.equal(ready.timer.status, "ready");
+    assert.equal(ready.timer.deadline, null);
+    assert.equal(ready.timer.remainingMs, 1800000);
   } finally {
     await f.close();
   }
@@ -258,7 +267,7 @@ test("SQLite recovers rundown, selected session and running deadline after serve
       durationMs: 1800000,
     });
     await f.command({ type: "step", direction: 1 });
-    const before = await f.command({ type: "start" });
+    const before = await f.command({ type: "startPrepared" });
     f.advance(45000);
     await f.restart();
     const after = f.service.getState();
@@ -349,7 +358,7 @@ test("zero transitions into overtime and preserves the deadline after restart", 
   const f = await fixture();
   try {
     await f.command({ type: "setDuration", durationMs: 1000 });
-    const started = await f.command({ type: "start" });
+    const started = await f.command({ type: "startPrepared" });
     f.advance(1000);
     assert.equal(
       formatTime(remaining(f.service.getState().timer, f.now)),
@@ -400,31 +409,24 @@ test("invalid input, stale commands and duplicate command replays cannot change 
     await f.close();
   }
 });
-test("session edit, duplicate, reorder and delete preserve a valid selection", () => {
-  let s = initialState();
-  const id = s.selectedId;
-  s = reduce(s, { type: "duplicate", id }, 0);
-  const copy = s.sessions[1].id;
-  s = reduce(s, { type: "move", id: copy, direction: -1 }, 0);
-  assert.equal(s.sessions[0].id, copy);
-  s = reduce(s, { type: "start" }, 0);
-  s = reduce(
-    s,
+test("deleting the LIVE source preserves output and chooses another prepared session", () => {
+  let state = initialState();
+  const id = state.selectedId;
+  state = reduce(state, { type: "duplicate", id }, 0);
+  const copy = state.sessions[1].id;
+  state = reduce(state, { type: "startPrepared" }, 0);
+  const live = structuredClone(state);
+  state = reduce(
+    state,
     { type: "update", id, name: "New title", durationMs: 60000 },
     1,
   );
-  assert.equal(s.timer.status, "running");
-  assert.equal(s.timer.deadline, 5400000);
+  state = reduce(state, { type: "delete", id }, 2);
+  assert.equal(state.selectedId, copy);
+  assert.deepEqual(state.timer, live.timer);
+  assert.deepEqual(state.liveSession, live.liveSession);
   assert.throws(
-    () => reduce(s, { type: "delete", id }, 2),
-    /session is in use/,
-  );
-  s = reduce(s, { type: "reset" }, 2);
-  s = reduce(s, { type: "delete", id }, 2);
-  assert.equal(s.selectedId, copy);
-  assert.equal(s.timer.status, "ready");
-  assert.throws(
-    () => reduce(s, { type: "delete", id: copy }, 3),
+    () => reduce(state, { type: "delete", id: copy }, 3),
     /at least one/,
   );
 });
@@ -449,7 +451,7 @@ test("a deadline that passes while the server is down recovers running in overti
   const f = await fixture();
   try {
     await f.command({ type: "setDuration", durationMs: 1000 });
-    await f.command({ type: "start" });
+    await f.command({ type: "startPrepared" });
     f.advance(5000);
     await f.restart();
     const state = f.service.getState();
@@ -489,7 +491,7 @@ test("overtime pause, resume, adjustments and the 15-minute preset preserve manu
   const f = await fixture();
   try {
     await f.command({ type: "setDuration", durationMs: 1000 });
-    await f.command({ type: "start" });
+    await f.command({ type: "startPrepared" });
     f.advance(31000);
     let s = await f.command({ type: "pause" });
     assert.equal(s.timer.remainingMs, -30000);
@@ -507,7 +509,10 @@ test("overtime pause, resume, adjustments and the 15-minute preset preserve manu
     s = await f.command({ type: "adjust", deltaMs: -300000 });
     assert.equal(remaining(s.timer, f.now), -35000);
     assert.equal(s.timer.status, "running");
+    const overtime = structuredClone(s.timer);
     s = await f.command({ type: "setDuration", durationMs: 900000 });
+    assert.deepEqual(s.timer, overtime);
+    s = await f.command({ type: "loadPrepared" });
     assert.equal(s.timer.status, "ready");
     assert.equal(s.timer.deadline, null);
     assert.equal(formatTime(remaining(s.timer, f.now)), "15:00");
@@ -524,7 +529,7 @@ test("an overtime viewer refresh or reconnect retains the original deadline", as
   const f = await fixture();
   try {
     await f.command({ type: "setDuration", durationMs: 1000 });
-    const started = await f.command({ type: "start" });
+    const started = await f.command({ type: "startPrepared" });
     f.advance(62000);
     let viewer = await f.open("display");
     let state = await viewer.next("state");
@@ -575,7 +580,7 @@ test("30-second adjustments preserve the running deadline, paused state and over
     assert.equal(state.timer.status, "paused");
     assert.equal(state.timer.remainingMs, paused);
     await f.command({ type: "setDuration", durationMs: 1000 });
-    await f.command({ type: "start" });
+    await f.command({ type: "startPrepared" });
     f.advance(16000);
     state = await f.command({ type: "adjust", deltaMs: 30000 });
     assert.equal(remaining(state.timer, f.now), 15000);
@@ -630,24 +635,27 @@ test("Current Time pauses the countdown and persists across restart without auto
   }
 });
 
-test("presets, reset and presenter selection leave clock mode and load ready", async () => {
+test("preparing durations and presenters never replaces the LIVE Pacific clock", async () => {
   const f = await fixture();
   try {
     await f.command({ type: "add", name: "Next session", durationMs: 1800000 });
     const first = f.service.getState().selectedId;
+    await f.command({ type: "start" });
+    const clock = await f.command({ type: "setDisplayMode", mode: "clock" });
     for (const command of [
       { type: "setDuration", durationMs: 900000 },
-      { type: "reset" },
       { type: "step", direction: 1 },
       { type: "select", id: first },
     ]) {
-      await f.command({ type: "start" });
-      await f.command({ type: "setDisplayMode", mode: "clock" });
       const state = await f.command(command);
-      assert.equal(state.displayMode, "countdown");
-      assert.equal(state.timer.status, "ready");
-      assert.equal(state.timer.deadline, null);
+      assert.equal(state.displayMode, "clock");
+      assert.deepEqual(state.timer, clock.timer);
+      assert.deepEqual(state.liveSession, clock.liveSession);
     }
+    const ready = await f.command({ type: "loadPrepared" });
+    assert.equal(ready.displayMode, "countdown");
+    assert.equal(ready.timer.status, "ready");
+    assert.equal(ready.timer.deadline, null);
   } finally {
     await f.close();
   }
@@ -708,7 +716,7 @@ for (const mode of [
   "clock",
   "overtime",
 ] as const) {
-  test(`rundown edits preserve the loaded timer, selected presenter and ${mode} display`, () => {
+  test(`every preparation and agenda command is isolated from ${mode} LIVE output`, () => {
     let state = initialState();
     state = reduce(
       state,
@@ -717,7 +725,8 @@ for (const mode of [
     );
     const current = state.selectedId;
     const next = state.sessions[1].id;
-    if (mode !== "ready") state = reduce(state, { type: "start" }, 1000);
+    if (mode !== "ready")
+      state = reduce(state, { type: "startPrepared" }, 1000);
     if (mode === "paused") state = reduce(state, { type: "pause" }, 12345);
     if (mode === "clock")
       state = reduce(state, { type: "setDisplayMode", mode: "clock" }, 12345);
@@ -727,7 +736,7 @@ for (const mode of [
       state = reduce(state, command, now);
       assert.deepEqual(state.timer, before.timer);
       assert.equal(state.displayMode, before.displayMode);
-      assert.equal(state.selectedId, current);
+      assert.deepEqual(state.liveSession, before.liveSession);
     };
     edit({
       type: "update",
@@ -735,40 +744,32 @@ for (const mode of [
       name: "Renamed live presenter",
       durationMs: 1200000,
     });
-    edit({
-      type: "update",
-      id: next,
-      name: "Revised next presenter",
-      durationMs: 2700000,
-    });
     edit({ type: "add", name: "New agenda item", durationMs: 900000 });
     edit({ type: "duplicate", id: current });
     edit({ type: "move", id: current, direction: 1 });
-    edit({ type: "move", id: next, direction: -1 });
-    edit({ type: "delete", id: next });
-    assert.equal(
-      state.sessions.find((session) => session.id === current)!.durationMs,
-      1200000,
-    );
-    if (mode !== "ready")
-      assert.throws(
-        () => reduce(state, { type: "delete", id: current }, now),
-        /session is in use/,
-      );
-    const loaded = reduce(state, { type: "select", id: current }, now);
+    edit({ type: "select", id: next });
+    edit({ type: "setDuration", durationMs: 2700000 });
+    edit({ type: "step", direction: -1 });
+    edit({ type: "select", id: current });
+    edit({ type: "delete", id: current });
+    assert.ok(!state.sessions.some((session) => session.id === current));
+    const preparedDuration = state.preparedDurationMs;
+    const loaded = reduce(state, { type: "loadPrepared" }, now);
     assert.equal(loaded.timer.status, "ready");
-    assert.equal(loaded.timer.remainingMs, 1200000);
+    assert.equal(loaded.timer.remainingMs, preparedDuration);
     assert.equal(loaded.timer.deadline, null);
-    assert.equal(loaded.displayMode, "countdown");
+    const started = reduce(state, { type: "startPrepared" }, now);
+    assert.equal(started.timer.status, "running");
+    assert.equal(started.timer.deadline, now + preparedDuration);
   });
 }
 
 for (const clock of [false, true]) {
-  test(`live rundown changes persist and refresh without interrupting ${clock ? "Pacific clock" : "countdown"}`, async () => {
+  test(`independent LIVE and prepared state both survive restart while showing ${clock ? "clock" : "countdown"}`, async () => {
     const f = await fixture();
     try {
       await f.command({ type: "add", name: "Upcoming", durationMs: 1800000 });
-      await f.command({ type: "start" });
+      await f.command({ type: "startPrepared" });
       f.advance(12345);
       if (clock) await f.command({ type: "setDisplayMode", mode: "clock" });
       const before = f.service.getState();
@@ -777,36 +778,85 @@ for (const clock of [false, true]) {
       await f.command({
         type: "update",
         id: before.selectedId,
-        name: "Updated live presenter",
+        name: "Changed agenda title",
         durationMs: 1200000,
       });
-      await f.command({ type: "move", id: before.selectedId, direction: 1 });
+      await f.command({ type: "step", direction: 1 });
+      await f.command({ type: "setDuration", durationMs: 900000 });
       const after = await f.command({
-        type: "add",
-        name: "Added during show",
-        durationMs: 900000,
+        type: "delete",
+        id: before.liveSession.id,
       });
       let live = await viewer.next("state");
       while (live.revision < after.revision) live = await viewer.next("state");
       assert.deepEqual(live.timer, before.timer);
       assert.equal(live.displayMode, before.displayMode);
-      assert.equal(live.sessions, undefined);
+      for (const privateField of [
+        "sessions",
+        "liveSession",
+        "selectedId",
+        "preparedDurationMs",
+      ])
+        assert.equal(live[privateField], undefined);
       f.advance(65000);
       await f.restart();
       const restored = f.service.getState();
       assert.deepEqual(restored.timer, before.timer);
+      assert.deepEqual(restored.liveSession, before.liveSession);
       assert.equal(restored.displayMode, before.displayMode);
-      assert.equal(restored.selectedId, before.selectedId);
+      assert.equal(restored.preparedDurationMs, after.preparedDurationMs);
+      assert.equal(restored.selectedId, after.selectedId);
       assert.deepEqual(restored.sessions, after.sessions);
       const refreshed = await f.open("display");
       const snapshot = await refreshed.next("state");
       assert.deepEqual(snapshot.timer, before.timer);
       assert.equal(snapshot.displayMode, before.displayMode);
-      const loaded = await f.command({ type: "select", id: before.selectedId });
-      assert.equal(loaded.timer.status, "ready");
-      assert.equal(loaded.timer.remainingMs, 1200000);
+      const started = await f.command({ type: "startPrepared" });
+      assert.equal(started.timer.deadline, f.now + 900000);
+      assert.equal(started.liveSession.name, "Upcoming");
     } finally {
       await f.close();
     }
   });
 }
+
+test("existing stored LIVE timers migrate without changing deadline, timestamps or Pacific mode", () => {
+  for (const clock of [false, true]) {
+    let state = reduce(initialState(), { type: "start" }, 1000);
+    if (clock)
+      state = reduce(state, { type: "setDisplayMode", mode: "clock" }, 1500);
+    const before = structuredClone(state);
+    Reflect.deleteProperty(state, "preparedDurationMs");
+    Reflect.deleteProperty(state, "liveSession");
+    const migrated = normalizeState(state, 5000);
+    assert.deepEqual(migrated.timer, before.timer);
+    assert.equal(migrated.displayMode, before.displayMode);
+    assert.deepEqual(migrated.liveSession, before.liveSession);
+    assert.equal(migrated.preparedDurationMs, before.preparedDurationMs);
+  }
+});
+
+test("LIVE pause/resume/reset controls never publish a different prepared timer", () => {
+  let state = reduce(initialState(), { type: "startPrepared" }, 1000);
+  state = reduce(
+    state,
+    { type: "add", name: "Prepared next", durationMs: 1800000 },
+    2000,
+  );
+  state = reduce(state, { type: "step", direction: 1 }, 2000);
+  const liveSource = structuredClone(state.liveSession);
+  const preparedId = state.selectedId;
+  state = reduce(state, { type: "pause" }, 3000);
+  assert.equal(state.timer.remainingMs, 5398000);
+  state = reduce(state, { type: "start" }, 10000);
+  assert.equal(state.timer.deadline, 5408000);
+  assert.deepEqual(state.liveSession, liveSource);
+  state = reduce(state, { type: "reset" }, 11000);
+  assert.equal(state.timer.status, "ready");
+  assert.equal(state.timer.remainingMs, 5400000);
+  assert.equal(state.selectedId, preparedId);
+  assert.equal(state.preparedDurationMs, 1800000);
+  state = reduce(state, { type: "start" }, 12000);
+  assert.equal(state.timer.deadline, 5412000);
+  assert.deepEqual(state.liveSession, liveSource);
+});

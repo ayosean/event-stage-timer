@@ -167,7 +167,7 @@ export function useTimer(
     const interval = setInterval(tick, 50);
     return () => clearInterval(interval);
   }, []);
-  function command(command: Command) {
+  function command(command: Command, revision?: number) {
     if (
       ws.current?.readyState !== WebSocket.OPEN ||
       !current.current ||
@@ -180,7 +180,7 @@ export function useTimer(
       JSON.stringify({
         type: "command",
         id: crypto.randomUUID(),
-        revision: current.current.revision,
+        revision: revision ?? current.current.revision,
         command,
       }),
     );

@@ -37,18 +37,51 @@ Do not remove or replace the volume during redeploys. Enable Railway volume back
 
 ## Controller operation
 
-- **Start / Resume** is the only command that begins counting. It does nothing if already running or if no time remains.
-- Presets **15 / 30 / 45 / 60 / 90**, a custom duration, session selection, previous/next, and reset **always load ready, with no deadline**. Rundown edits never change the loaded timer or clock. At zero the same timer continues counting elapsed overtime in red. The app never automatically selects another presenter.
-- Reset restores the loaded duration. Adding/subtracting 30 seconds or 1, 5, or 10 minutes changes current remaining time; while running it moves the deadline without changing the running state. These adjustments do not rewrite the session's saved duration. Adjustments use signed remaining time: adding five minutes to 00:30 overtime restores a 04:30 countdown. Subtraction may move a running timer into overtime. Adjustments never start a stopped timer. Pause/resume also works during overtime.
-- Session names and durations are editable; add, duplicate, delete, and reorder with the up/down arrows. Arrow buttons also work on touch devices and keyboards. Edits to names and durations, additions, duplicates, reordering, and deleting other sessions leave the current countdown or clock untouched. Saved durations apply when you explicitly load a session; use the +/− controls to adjust the active timer. The selected session cannot be deleted while its timer is running/paused or while showing the clock; load another session first. Deleting a selected ready session loads the adjacent session ready. Keep at least one session. Limits: 200 sessions, 120-character names, duration 1 second–999 minutes.
-- Controls disable while disconnected or awaiting acknowledgement. Commands are never queued or retried automatically after network failure. If confirmation times out, review the synchronized timer before issuing another command. Concurrent controllers use revision checks so a stale command is rejected instead of silently applying to a new presenter.
-- Controller logins last 24 hours. Reauthenticate between event days. Expiration/sign-out does not stop the timer or presenter displays. The login cookie is HttpOnly, SameSite=Strict, and Secure in production. Sign-out revokes that session, including its open controller connections.
+The dashboard separates **LIVE output** from **off-air preparation**. A running
+countdown or Pacific clock owns its own saved state and is independent of the
+rundown. Planning commands cannot change the LIVE deadline, remaining time,
+mode, or original session name.
+
+- In **Prepare next timer**, choose a presenter, a **15 / 30 / 45 / 60 / 90**
+  preset, or a custom duration. Previous/Next only change which session is
+  prepared. These actions never start, pause, reset, or replace LIVE output.
+- Edit, add, duplicate, reorder, and delete rundown sessions freely. Even deleting
+  the LIVE source entry leaves its output running with its original name and
+  deadline. Keep at least one agenda entry. Limits: 200 sessions, 120-character
+  names, duration 1 second–999 minutes.
+- **Start prepared LIVE** explicitly publishes and starts the prepared timer.
+  **Show prepared paused** publishes it in the ready state without a deadline;
+  it stays paused until you manually press Start. An active countdown or clock
+  requires a confirmation before either action can replace it.
+- The LIVE panel's **Pause / Resume** and **+/−** controls intentionally affect
+  the existing LIVE timer. They never publish a different prepared session.
+  Adding/subtracting 30 seconds or 1, 5, or 10 minutes preserves running/paused
+  status. Overtime counts upward in red and supports pause/resume/adjustments.
+- **Reset** restores the LIVE timer's original loaded duration, paused. Reset
+  and display mode switches require confirmation when an output is active.
+  Cancel leaves the output unchanged. Confirmations are bound to the revision
+  you reviewed; another controller's intervening command causes rejection rather
+  than silently publishing a different prepared timer.
+- Editing, selecting, or preparing sessions while the clock is on air leaves the
+  clock visible. Only explicit LIVE controls can change it.
+- LIVE state and the separately prepared session/duration both survive refresh
+  and server restart. Migration from earlier versions preserves the existing
+  LIVE deadline, start/pause timestamps and display mode.
+- Controls disable while disconnected or awaiting acknowledgement. Commands are
+  never queued or retried after a network failure. Review the synchronized state
+  before retrying a timed-out command. Controller logins last 24 hours;
+  expiration/sign-out does not stop the presenter displays.
 
 ## Current Time display
 
 Use **Current Time** above the live preview to show San Francisco's current time on every connected display. It shows 12-hour time with just hours and minutes, for example `9:05`, without seconds or AM/PM, in large white type on black. The timezone is fixed to **America/Los_Angeles**, which automatically switches between PST and PDT. The device's own timezone does not change the display.
 
-Switching to Current Time pauses a running countdown and preserves its exact remaining time (including overtime). **Countdown** switches back without starting it; press Start/Resume manually. Start/Resume, a duration preset, reset, or presenter selection also returns to Countdown mode. Loading a duration or presenter always loads ready. Editing the saved rundown leaves the clock and paused countdown untouched. Time adjustments while showing the clock affect the paused countdown without changing display mode.
+The **Current Time** button is a LIVE output control: switching to it pauses a
+running countdown and preserves the exact remaining time, including overtime.
+**Countdown** switches back without starting it; Resume is manual. An active
+output requires confirmation for a mode switch. Rundown work and preparing a
+new timer never change the clock. Explicitly publishing a prepared timer returns
+the display to Countdown mode.
 
 The server persists the selected mode on the volume and sends it to all viewers, including after refresh, reconnect, and server restart. Clock mode uses the same server-time synchronization and monotonic local clock as the countdown; it continues ticking through a temporary disconnection. Display viewers cannot change modes. Screen wake lock applies to both modes.
 
@@ -100,4 +133,4 @@ Browser tests start their own server on port 3000 with disposable test credentia
 
 ### Live-device smoke checks
 
-On a laptop and landscape iPad using different networks: log in, load 90 minutes (paused), start, pause/resume, add five minutes, reload the iPad, disconnect/reconnect Wi-Fi, load 30 minutes (paused), and advance to a different presenter (paused). Temporarily load a short duration and verify red `00:00` followed by increasing overtime. Redeploy once before the event and verify the same deadline and rundown return. Test Auto-Lock and Guided Access for longer than the device's normal sleep interval. Automated browser tests cannot verify the physical iPad's sleep settings.
+On a laptop and landscape iPad using different networks: log in, prepare 90 minutes, Show prepared paused, start, pause/resume, add five minutes, reload the iPad, and disconnect/reconnect Wi-Fi. While LIVE is running, prepare 30 minutes, edit/delete its source agenda entry, and select a different presenter; verify the LIVE deadline is unchanged. Then explicitly publish the prepared timer paused and verify it stays ready until Start. Temporarily load a short duration and verify red `00:00` followed by increasing overtime. Redeploy once before the event and verify the same deadline and rundown return. Test Auto-Lock and Guided Access for longer than the device's normal sleep interval. Automated browser tests cannot verify the physical iPad's sleep settings.

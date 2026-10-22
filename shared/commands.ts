@@ -9,6 +9,8 @@ export const commandSchema = z.discriminatedUnion("type", [
     mode: z.enum(["countdown", "clock"]),
   }),
   z.object({ type: z.literal("start") }),
+  z.object({ type: z.literal("startPrepared") }),
+  z.object({ type: z.literal("loadPrepared") }),
   z.object({ type: z.literal("pause") }),
   z.object({ type: z.literal("reset") }),
   z.object({ type: z.literal("setDuration"), durationMs: duration }),
