@@ -53,6 +53,9 @@ mode, or original session name.
   timezone choices are **Eastern — New York** (`America/New_York`) and
   **Pacific — San Francisco** (`America/Los_Angeles`). Modes and timezone
   changes are also off air until TAKE.
+  The following describes the default LIVE Output / Staging workflow. The optional
+  **Legacy** tab restores direct controls, as described below.
+
 - **TAKE** is the only command that publishes a prepared output. Taking a
   countdown always loads its full prepared duration paused, with no deadline;
   press **Start** in the LIVE panel when the presenter is ready. Taking a clock
@@ -153,3 +156,7 @@ Browser tests start their own server on port 3000 with disposable test credentia
 ### Live-device smoke checks
 
 On a laptop and landscape iPad using different networks: log in, prepare 90 minutes, press TAKE, start, pause/resume, add five minutes, reload the iPad, and disconnect/reconnect Wi-Fi. While LIVE is running, prepare 30 minutes, edit/delete its source agenda entry, and select a different presenter; verify the LIVE deadline is unchanged. Then explicitly TAKE the prepared timer and verify it stays ready until Start. Temporarily load a short duration and verify red `00:00` followed by increasing overtime. Redeploy once before the event and verify the same deadline and rundown return. Test Auto-Lock and Guided Access for longer than the device's normal sleep interval. Automated browser tests cannot verify the physical iPad's sleep settings.
+
+### Legacy direct-control tab
+
+The **Legacy** tab shows LIVE output and the original direct controls together. Selecting a preset, custom duration, or presenter loads that countdown LIVE **paused** immediately. Current Time and clock timezone changes apply immediately; TAKE is hidden. Press Start manually to begin a countdown. Entering or leaving Legacy never sends a timer command. This is a local dashboard view, so other controllers keep their chosen workflow. LIVE Output and Staging retain the TAKE workflow. Rundown edits, adding, deleting and reordering remain off air in every view.

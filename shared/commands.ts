@@ -4,7 +4,25 @@ import { MAX_MS } from "./timer.js";
 const duration = z.number().int().min(1000).max(MAX_MS);
 const id = z.string().uuid();
 const name = z.string().trim().min(1).max(120);
+const legacyActionSchema = z.discriminatedUnion("type", [
+  z.object({ type: z.literal("setDuration"), durationMs: duration }),
+  z.object({ type: z.literal("select"), id }),
+  z.object({
+    type: z.literal("step"),
+    direction: z.union([z.literal(1), z.literal(-1)]),
+  }),
+  z.object({
+    type: z.literal("setDisplayMode"),
+    mode: z.enum(["countdown", "clock"]),
+  }),
+  z.object({
+    type: z.literal("setClockTimeZone"),
+    timeZone: z.enum(CLOCK_TIME_ZONES),
+  }),
+]);
+export type LegacyAction = z.infer<typeof legacyActionSchema>;
 export const commandSchema = z.discriminatedUnion("type", [
+  z.object({ type: z.literal("legacy"), action: legacyActionSchema }),
   z.object({
     type: z.literal("setClockTimeZone"),
     timeZone: z.enum(CLOCK_TIME_ZONES),

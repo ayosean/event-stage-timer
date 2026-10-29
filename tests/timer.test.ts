@@ -982,6 +982,7 @@ test("LIVE and prepared timezones survive restart independently and viewers cann
     assert.equal(snapshot.clockTimeZone, "America/New_York");
     assert.equal(snapshot.preparedClockTimeZone, undefined);
     for (const command of [
+      { type: "legacy", action: { type: "setDuration", durationMs: 1800000 } },
       { type: "setLiveTime", remainingMs: 60000 },
       { type: "take" },
       { type: "setClockTimeZone", timeZone: "America/Los_Angeles" },
@@ -1087,6 +1088,70 @@ test("custom LIVE time replaces remaining time without changing rundown, prepare
     const clock = await f.takeClock();
     assert.throws(() =>
       reduce(clock, { type: "setLiveTime", remainingMs: 60000 }, f.now),
+    );
+  } finally {
+    await f.close();
+  }
+});
+
+test("Legacy direct controls atomically load paused countdowns and switch clocks without changing normal staging behavior", async () => {
+  const f = await fixture();
+  try {
+    await f.takeAndStart();
+    const rev = f.service.getState().revision;
+    let s = await f.command({
+      type: "legacy",
+      action: { type: "setDuration", durationMs: 1800000 },
+    });
+    assert.equal(s.revision, rev + 1);
+    assert.equal(s.timer.status, "ready");
+    assert.equal(s.timer.deadline, null);
+    assert.equal(s.timer.remainingMs, 1800000);
+    await f.command({ type: "add", name: "Legacy second", durationMs: 900000 });
+    await f.command({ type: "start" });
+    s = await f.command({
+      type: "legacy",
+      action: { type: "step", direction: 1 },
+    });
+    assert.equal(s.liveSession.name, "Legacy second");
+    assert.equal(s.timer.status, "ready");
+    assert.equal(s.timer.remainingMs, 900000);
+    s = await f.command({
+      type: "legacy",
+      action: { type: "select", id: s.sessions[0].id },
+    });
+    assert.equal(s.liveSession.id, s.sessions[0].id);
+    await f.command({ type: "start" });
+    s = await f.command({
+      type: "legacy",
+      action: { type: "setDisplayMode", mode: "clock" },
+    });
+    assert.equal(s.displayMode, "clock");
+    assert.equal(s.timer.status, "paused");
+    s = await f.command({
+      type: "legacy",
+      action: { type: "setClockTimeZone", timeZone: "America/New_York" },
+    });
+    assert.equal(s.clockTimeZone, "America/New_York");
+    await f.restart();
+    assert.deepEqual(f.service.getState(), s);
+    const staged = await f.command({
+      type: "setDuration",
+      durationMs: 2700000,
+    });
+    assert.equal(staged.displayMode, "clock");
+    assert.deepEqual(staged.timer, s.timer);
+    const loaded = await f.command({
+      type: "legacy",
+      action: { type: "setDisplayMode", mode: "countdown" },
+    });
+    assert.equal(loaded.displayMode, "countdown");
+    assert.equal(loaded.timer.status, "ready");
+    assert.equal(loaded.timer.remainingMs, 2700000);
+    assert.equal(
+      commandSchema.safeParse({ type: "legacy", action: { type: "start" } })
+        .success,
+      false,
     );
   } finally {
     await f.close();

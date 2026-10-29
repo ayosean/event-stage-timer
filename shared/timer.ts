@@ -169,6 +169,26 @@ export function reduce(input: State, command: Command, now: number): State {
     state.displayMode = "countdown";
   };
   switch (command.type) {
+    case "legacy": {
+      // Apply and publish atomically: no intermediate prepared state reaches viewers.
+      const next = reduce(state, command.action, now);
+      if (
+        command.action.type === "setClockTimeZone" &&
+        state.displayMode !== "clock"
+      ) {
+        next.revision = state.revision + 1;
+        return next;
+      }
+      next.preparedDisplayMode =
+        command.action.type === "setDisplayMode"
+          ? command.action.mode
+          : command.action.type === "setClockTimeZone"
+            ? "clock"
+            : "countdown";
+      const published = reduce(next, { type: "take" }, now);
+      published.revision = state.revision + 1;
+      return published;
+    }
     case "setClockTimeZone":
       state.preparedClockTimeZone = command.timeZone;
       break;

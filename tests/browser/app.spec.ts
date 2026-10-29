@@ -27,7 +27,7 @@ async function publish(page: Page, button: Locator) {
   if (await confirm.isVisible()) await confirm.click();
   await expect(page.getByRole("dialog")).toHaveCount(0);
 }
-async function tab(page: Page, name: "LIVE Output" | "Staging") {
+async function tab(page: Page, name: "LIVE Output" | "Staging" | "Legacy") {
   await page.getByRole("tab", { name, exact: true }).click();
 }
 async function startPrepared(page: Page, minutes: number) {
@@ -501,4 +501,53 @@ test("LIVE and Staging tabs share large previews and never change output when sw
     path: testInfo.outputPath("staging-tabs-mobile.png"),
     fullPage: true,
   });
+});
+
+test("Legacy tab restores direct controls while entering/leaving it leaves LIVE untouched", async ({
+  page,
+  context,
+}) => {
+  await login(page);
+  await startPrepared(page, 90);
+  await addSession(page, "Legacy browser presenter");
+  const before = await output(page);
+  await tab(page, "Legacy");
+  expect((await output(page)).timer).toEqual(before.timer);
+  await expect(
+    page.getByRole("button", { name: "TAKE", exact: true }),
+  ).toHaveCount(0);
+  await expect(page.locator(".legacy-notice")).toBeVisible();
+  const viewer = await context.newPage();
+  await viewer.goto("/display");
+  await page.getByRole("button", { name: "30 min", exact: true }).click();
+  await expect(viewer.locator("main")).toHaveText("30:00");
+  expect((await output(page)).timer.status).toBe("ready");
+  await page
+    .getByRole("button", { name: "Load Legacy browser presenter", exact: true })
+    .click();
+  await expect(viewer.locator("main")).toHaveText("25:00");
+  await expect(
+    page.getByRole("tab", { name: "Legacy", exact: true }),
+  ).toHaveAttribute("aria-selected", "true");
+  await page.getByLabel("Custom duration").fill("12.5");
+  await page.getByRole("button", { name: "Load timer", exact: true }).click();
+  await expect(viewer.locator("main")).toHaveText("12:30");
+  await page.getByRole("button", { name: "Current Time", exact: true }).click();
+  await expect.poll(async () => (await output(page)).displayMode).toBe("clock");
+  await page
+    .getByLabel("Clock timezone", { exact: true })
+    .selectOption("America/New_York");
+  await expect
+    .poll(async () => (await output(page)).clockTimeZone)
+    .toBe("America/New_York");
+  await tab(page, "Staging");
+  const clock = await output(page);
+  await page.getByRole("button", { name: "45 min", exact: true }).click();
+  expect((await output(page)).timer).toEqual(clock.timer);
+  expect((await output(page)).displayMode).toBe("clock");
+  await tab(page, "Legacy");
+  expect((await output(page)).displayMode).toBe("clock");
+  await page.getByRole("button", { name: "Countdown", exact: true }).click();
+  await expect(viewer.locator("main")).toHaveText("45:00");
+  expect((await output(page)).timer.status).toBe("ready");
 });

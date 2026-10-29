@@ -1202,3 +1202,28 @@ body:has(.presenter-display) {
     width: 100%;
   }
 }
+
+.workspace-panels {
+  display: grid;
+  gap: 20px;
+}
+@media (max-width: 560px) {
+  .output-tabs button {
+    padding: 12px 8px;
+    font-size: 12px;
+  }
+  .output-tabs button svg {
+    display: none;
+  }
+}
+
+.legacy-notice {
+  margin: 0;
+  padding: 14px 18px;
+  border: 1px solid #79603a;
+  border-radius: 10px;
+  background: #292316;
+  color: #e9cc97;
+  font-size: 12px;
+  line-height: 1.6;
+}

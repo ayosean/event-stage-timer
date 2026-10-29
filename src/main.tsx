@@ -1,3 +1,4 @@
+import type { LegacyAction } from "../shared/commands";
 import {
   CLOCK_TIME_ZONES,
   DEFAULT_CLOCK_TIME_ZONE,
@@ -342,7 +343,9 @@ function Controller({ onLogout }: { onLogout: () => void }) {
     pending,
     clearError,
   } = useTimer("controller", true, onLogout);
-  const [outputTab, setOutputTab] = useState<"live" | "staging">("live");
+  const [outputTab, setOutputTab] = useState<"live" | "staging" | "legacy">(
+    "live",
+  );
   const [liveTime, setLiveTime] = useState("");
   const [custom, setCustom] = useState(""),
     [editor, setEditor] = useState<Session | null | undefined>(undefined),
@@ -354,6 +357,10 @@ function Controller({ onLogout }: { onLogout: () => void }) {
       revision: number;
       label: string;
     } | null>(null);
+  const legacy = outputTab === "legacy";
+  function outputCommand(action: LegacyAction) {
+    command(legacy ? { type: "legacy", action } : action);
+  }
   const sessions = snapshot?.sessions ?? [];
   const current = sessions.find((s) => s.id === snapshot?.selectedId);
   const index = sessions.findIndex((s) => s.id === current?.id);
@@ -369,7 +376,7 @@ function Controller({ onLogout }: { onLogout: () => void }) {
   const displayUrl = `${location.origin}/display`;
   function changeLive(next: Command, label: string) {
     if (!snapshot || disabled) return;
-    if (clockMode || snapshot.timer.status !== "ready")
+    if (!legacy && (clockMode || snapshot.timer.status !== "ready"))
       setLiveChange({ command: next, revision: snapshot.revision, label });
     else command(next, snapshot.revision);
   }
@@ -455,13 +462,13 @@ function Controller({ onLogout }: { onLogout: () => void }) {
                 role="tablist"
                 aria-label="Output workspace"
               >
-                {(["live", "staging"] as const).map((tab) => (
+                {(["live", "staging", "legacy"] as const).map((tab) => (
                   <button
                     key={tab}
                     id={`tab-${tab}`}
                     role="tab"
                     aria-selected={outputTab === tab}
-                    aria-controls={`panel-${tab}`}
+                    aria-controls="panel-workspace"
                     tabIndex={outputTab === tab ? 0 : -1}
                     onClick={() => setOutputTab(tab)}
                     onKeyDown={(event) => {
@@ -471,21 +478,28 @@ function Controller({ onLogout }: { onLogout: () => void }) {
                         )
                       ) {
                         event.preventDefault();
+                        const tabs = ["live", "staging", "legacy"] as const;
                         const next =
                           event.key === "Home"
-                            ? "live"
+                            ? tabs[0]
                             : event.key === "End"
-                              ? "staging"
-                              : tab === "live"
-                                ? "staging"
-                                : "live";
+                              ? tabs[2]
+                              : tabs[
+                                  (tabs.indexOf(tab) +
+                                    (event.key === "ArrowRight" ? 1 : 2)) %
+                                    tabs.length
+                                ];
                         setOutputTab(next);
                         document.getElementById(`tab-${next}`)?.focus();
                       }
                     }}
                   >
                     {tab === "live" ? <Radio size={16} /> : <Timer size={16} />}
-                    {tab === "live" ? "LIVE Output" : "Staging"}
+                    {tab === "live"
+                      ? "LIVE Output"
+                      : tab === "staging"
+                        ? "Staging"
+                        : "Legacy"}
                   </button>
                 ))}
               </div>
@@ -498,329 +512,364 @@ function Controller({ onLogout }: { onLogout: () => void }) {
               </span>
             </div>
             <div
-              className="panel timer-panel"
-              id="panel-live"
+              className="workspace-panels"
+              id="panel-workspace"
               role="tabpanel"
-              aria-labelledby="tab-live"
-              hidden={outputTab !== "live"}
+              aria-labelledby={`tab-${outputTab}`}
             >
-              <div className="timer-panel-heading">
-                <span className="eyebrow">
-                  <Radio size={14} />
-                  LIVE OUTPUT
-                </span>
-                <span
-                  className={`status-pill ${!clockMode && overtime ? "overtime" : running ? "running" : ""}`}
-                >
-                  {clockMode
-                    ? clockTimeZone === "America/New_York"
-                      ? "EASTERN TIME"
-                      : "PACIFIC TIME"
-                    : running
-                      ? overtime
-                        ? "OVERTIME"
-                        : "RUNNING"
-                      : snapshot?.timer.status === "paused"
-                        ? overtime
-                          ? "PAUSED · OVERTIME"
-                          : "PAUSED"
-                        : "READY TO START"}
-                </span>
-              </div>
-              <div className="session-heading">
-                {!clockMode && (
-                  <span className="session-index">
-                    {liveIndex >= 0
-                      ? String(liveIndex + 1).padStart(2, "0")
-                      : "LIVE"}
-                  </span>
-                )}
-                <h2>
-                  {clockMode
-                    ? clockTimeZoneLabels[clockTimeZone].heading
-                    : (liveSession?.name ?? "Connecting…")}
-                </h2>
-              </div>
-              <div className="preview-clock">
-                <Digits
-                  value={
-                    clockMode
-                      ? formatClockTime(
-                          serverNow,
-                          snapshot?.clockTimeZone ?? DEFAULT_CLOCK_TIME_ZONE,
-                        )
-                      : formatTime(ms)
-                  }
-                  red={!clockMode && ms <= 0}
-                />
-              </div>
-              <p className="timer-hint">
-                {clockMode
-                  ? "Current time is live on all displays. Prepare another output off air, then press TAKE to change it."
-                  : running
-                    ? overtime
-                      ? "Overtime is counting up on all connected displays."
-                      : "Countdown is live on all connected displays."
-                    : overtime
-                      ? "Overtime is paused. Press Resume to continue counting up."
-                      : "Timer is loaded. Press Start when your presenter is ready."}
-              </p>
-              <div className="transport">
-                <button
-                  className={`primary start-button ${running ? "pause-button" : ""}`}
-                  disabled={disabled || clockMode}
-                  onClick={() => command({ type: running ? "pause" : "start" })}
-                >
-                  {running ? <Pause size={21} /> : <Play size={21} />}{" "}
-                  {running
-                    ? "Pause"
-                    : snapshot?.timer.status === "paused"
-                      ? "Resume"
-                      : "Start timer"}
-                </button>
-                <button
-                  disabled={disabled || clockMode}
-                  className="reset-button"
-                  onClick={() =>
-                    changeLive(
-                      { type: "reset" },
-                      "Reset the LIVE countdown to its original loaded duration, paused.",
-                    )
-                  }
-                >
-                  <RotateCcw size={17} />
-                  <span>Reset</span>
-                </button>
-              </div>
-              <div className="adjustments">
-                <span className="control-caption">ADJUST LIVE TIME</span>
-                <div>
-                  {(
-                    [
-                      -600000, -300000, -60000, -30000, 30000, 60000, 300000,
-                      600000,
-                    ] as const
-                  ).map((deltaMs) => {
-                    const seconds = Math.abs(deltaMs) < 60000;
-                    const amount = Math.abs(deltaMs) / (seconds ? 1000 : 60000);
-                    return (
-                      <button
-                        key={deltaMs}
-                        disabled={disabled || clockMode}
-                        aria-label={`${deltaMs > 0 ? "Add" : "Subtract"} ${amount} ${seconds ? "seconds" : "minutes"}`}
-                        onClick={() => command({ type: "adjust", deltaMs })}
-                      >
-                        {deltaMs > 0 ? "+" : "−"}
-                        {amount}
-                        <span>{seconds ? "s" : "m"}</span>
-                      </button>
-                    );
-                  })}
-                </div>
-                <form
-                  className="live-time-form"
-                  onSubmit={(event) => {
-                    event.preventDefault();
-                    const remainingMs = parseLiveTime(liveTime);
-                    if (remainingMs !== null && !disabled && !clockMode)
-                      command({ type: "setLiveTime", remainingMs });
-                  }}
-                >
-                  <label htmlFor="live-time">Custom LIVE time</label>
-                  <input
-                    id="live-time"
-                    type="text"
-                    placeholder="12:30 or 15"
-                    value={liveTime}
-                    maxLength={6}
-                    autoComplete="off"
-                    aria-describedby="live-time-help"
-                    disabled={disabled || clockMode}
-                    onChange={(event) => setLiveTime(event.target.value)}
-                  />
-                  <button
-                    type="submit"
-                    disabled={
-                      disabled || clockMode || parseLiveTime(liveTime) === null
-                    }
-                  >
-                    Set LIVE time
-                  </button>
-                  <p id="live-time-help" className="muted">
-                    Enter minutes or MM:SS (up to 999:00). Applies immediately;
-                    running stays running, paused stays paused.
-                  </p>
-                </form>
-              </div>
-            </div>
-            <section
-              className="panel duration-panel"
-              id="panel-staging"
-              role="tabpanel"
-              aria-labelledby="tab-staging"
-              hidden={outputTab !== "staging"}
-            >
-              <div className="section-heading">
-                <h2>Prepare next output</h2>
-                <span className="subtle-chip">OFF AIR · Safe to edit</span>
-              </div>
+              {legacy && (
+                <p className="legacy-notice" role="note">
+                  Legacy mode · Presets, presenter selection and clock controls
+                  change LIVE immediately. Countdown timers load paused. Rundown
+                  edits stay off air.
+                </p>
+              )}
               <div
-                className="display-mode-controls"
-                role="group"
-                aria-label="Prepared display mode"
+                className="panel timer-panel"
+                id="panel-live"
+                hidden={outputTab === "staging"}
               >
-                <button
-                  disabled={disabled}
-                  aria-pressed={preparedMode === "countdown"}
-                  onClick={() =>
-                    command({ type: "setDisplayMode", mode: "countdown" })
-                  }
-                >
-                  <Timer size={16} />
-                  Countdown
-                </button>
-                <button
-                  disabled={disabled}
-                  aria-pressed={preparedMode === "clock"}
-                  onClick={() =>
-                    command({ type: "setDisplayMode", mode: "clock" })
-                  }
-                >
-                  <Clock size={16} />
-                  Current Time
-                </button>
-              </div>
-              <div className="clock-timezone-control">
-                <label htmlFor="clock-timezone">Clock timezone</label>
-                <select
-                  id="clock-timezone"
-                  disabled={disabled}
-                  value={preparedZone}
-                  onChange={(event) =>
-                    command({
-                      type: "setClockTimeZone",
-                      timeZone: event.target.value as ClockTimeZone,
-                    })
-                  }
-                >
-                  {CLOCK_TIME_ZONES.map((zone) => (
-                    <option key={zone} value={zone}>
-                      {clockTimeZoneLabels[zone].label}
-                    </option>
-                  ))}
-                </select>
-                <p>Off air until TAKE. Daylight saving time is automatic.</p>
-              </div>
-              <div className="prepare-navigation">
-                <button
-                  disabled={disabled || index <= 0}
-                  aria-label="Previous presenter"
-                  title="Prepare previous presenter; LIVE stays unchanged"
-                  onClick={() => command({ type: "step", direction: -1 })}
-                >
-                  <ChevronLeft size={18} /> Previous
-                </button>
-                <button
-                  disabled={disabled || index >= sessions.length - 1}
-                  aria-label="Next presenter"
-                  title="Prepare next presenter; LIVE stays unchanged"
-                  onClick={() => command({ type: "step", direction: 1 })}
-                >
-                  Next <ChevronRight size={18} />
-                </button>
-              </div>
-              <div className="prepared-summary">
-                <span>
-                  {preparedMode === "clock"
-                    ? clockTimeZoneLabels[preparedZone].heading
-                    : (current?.name ?? "Preparing…")}
-                </span>
+                <div className="timer-panel-heading">
+                  <span className="eyebrow">
+                    <Radio size={14} />
+                    LIVE OUTPUT
+                  </span>
+                  <span
+                    className={`status-pill ${!clockMode && overtime ? "overtime" : running ? "running" : ""}`}
+                  >
+                    {clockMode
+                      ? clockTimeZone === "America/New_York"
+                        ? "EASTERN TIME"
+                        : "PACIFIC TIME"
+                      : running
+                        ? overtime
+                          ? "OVERTIME"
+                          : "RUNNING"
+                        : snapshot?.timer.status === "paused"
+                          ? overtime
+                            ? "PAUSED · OVERTIME"
+                            : "PAUSED"
+                          : "READY TO START"}
+                  </span>
+                </div>
+                <div className="session-heading">
+                  {!clockMode && (
+                    <span className="session-index">
+                      {liveIndex >= 0
+                        ? String(liveIndex + 1).padStart(2, "0")
+                        : "LIVE"}
+                    </span>
+                  )}
+                  <h2>
+                    {clockMode
+                      ? clockTimeZoneLabels[clockTimeZone].heading
+                      : (liveSession?.name ?? "Connecting…")}
+                  </h2>
+                </div>
                 <div className="preview-clock">
                   <Digits
                     value={
-                      preparedMode === "clock"
-                        ? formatClockTime(serverNow, preparedZone)
-                        : formatTime(snapshot?.preparedDurationMs ?? 0)
+                      clockMode
+                        ? formatClockTime(
+                            serverNow,
+                            snapshot?.clockTimeZone ?? DEFAULT_CLOCK_TIME_ZONE,
+                          )
+                        : formatTime(ms)
                     }
+                    red={!clockMode && ms <= 0}
                   />
                 </div>
-                <p>
-                  Session selection, modes, timezones, presets, and rundown
-                  edits stay off air. LIVE output keeps going until TAKE.
+                <p className="timer-hint">
+                  {clockMode
+                    ? "Current time is live on all displays. Prepare another output off air, then press TAKE to change it."
+                    : running
+                      ? overtime
+                        ? "Overtime is counting up on all connected displays."
+                        : "Countdown is live on all connected displays."
+                      : overtime
+                        ? "Overtime is paused. Press Resume to continue counting up."
+                        : "Timer is loaded. Press Start when your presenter is ready."}
                 </p>
-              </div>
-              <div className="presets">
-                {[15, 30, 45, 60, 90].map((n) => (
+                <div className="transport">
                   <button
-                    key={n}
-                    disabled={disabled}
-                    className={
-                      snapshot?.preparedDurationMs === n * 60000
-                        ? "selected"
-                        : ""
-                    }
+                    className={`primary start-button ${running ? "pause-button" : ""}`}
+                    disabled={disabled || clockMode}
                     onClick={() =>
-                      command({ type: "setDuration", durationMs: n * 60000 })
+                      command({ type: running ? "pause" : "start" })
                     }
                   >
-                    {n}
-                    <span>min</span>
+                    {running ? <Pause size={21} /> : <Play size={21} />}{" "}
+                    {running
+                      ? "Pause"
+                      : snapshot?.timer.status === "paused"
+                        ? "Resume"
+                        : "Start timer"}
                   </button>
-                ))}
-              </div>
-              <form
-                className="custom-duration"
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  const value = Number(custom);
-                  if (value >= 1 / 60 && value <= 999)
-                    command({
-                      type: "setDuration",
-                      durationMs: Math.round(value * 60000),
-                    });
-                }}
-              >
-                <label htmlFor="custom-duration">Custom duration</label>
-                <div className="input-unit">
-                  <input
-                    id="custom-duration"
-                    type="number"
-                    min={1 / 60}
-                    max={999}
-                    step="any"
-                    required
-                    placeholder="Minutes"
-                    value={custom}
-                    onChange={(e) => setCustom(e.target.value)}
-                  />
-                  <span>min</span>
+                  <button
+                    disabled={disabled || clockMode}
+                    className="reset-button"
+                    onClick={() =>
+                      changeLive(
+                        { type: "reset" },
+                        "Reset the LIVE countdown to its original loaded duration, paused.",
+                      )
+                    }
+                  >
+                    <RotateCcw size={17} />
+                    <span>Reset</span>
+                  </button>
                 </div>
-                <button disabled={disabled || !custom} type="submit">
-                  Prepare timer
-                </button>
-              </form>
-              <div className="prepared-actions">
-                <button
-                  className="primary take-button"
-                  disabled={disabled}
-                  onClick={() =>
-                    changeLive(
-                      { type: "take" },
-                      preparedMode === "clock"
-                        ? `Take ${clockTimeZoneLabels[preparedZone].label} clock LIVE.`
-                        : `Take ${current?.name ?? "the prepared timer"} LIVE, paused. Press Start when ready.`,
-                    )
-                  }
-                >
-                  TAKE
-                </button>
-                <p>
-                  {preparedMode === "clock"
-                    ? "TAKE sends the selected clock to every display."
-                    : "TAKE loads this timer paused. Open LIVE Output and press Start to begin."}
-                </p>
+                <div className="adjustments">
+                  <span className="control-caption">ADJUST LIVE TIME</span>
+                  <div>
+                    {(
+                      [
+                        -600000, -300000, -60000, -30000, 30000, 60000, 300000,
+                        600000,
+                      ] as const
+                    ).map((deltaMs) => {
+                      const seconds = Math.abs(deltaMs) < 60000;
+                      const amount =
+                        Math.abs(deltaMs) / (seconds ? 1000 : 60000);
+                      return (
+                        <button
+                          key={deltaMs}
+                          disabled={disabled || clockMode}
+                          aria-label={`${deltaMs > 0 ? "Add" : "Subtract"} ${amount} ${seconds ? "seconds" : "minutes"}`}
+                          onClick={() => command({ type: "adjust", deltaMs })}
+                        >
+                          {deltaMs > 0 ? "+" : "−"}
+                          {amount}
+                          <span>{seconds ? "s" : "m"}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <form
+                    className="live-time-form"
+                    onSubmit={(event) => {
+                      event.preventDefault();
+                      const remainingMs = parseLiveTime(liveTime);
+                      if (remainingMs !== null && !disabled && !clockMode)
+                        command({ type: "setLiveTime", remainingMs });
+                    }}
+                  >
+                    <label htmlFor="live-time">Custom LIVE time</label>
+                    <input
+                      id="live-time"
+                      type="text"
+                      placeholder="12:30 or 15"
+                      value={liveTime}
+                      maxLength={6}
+                      autoComplete="off"
+                      aria-describedby="live-time-help"
+                      disabled={disabled || clockMode}
+                      onChange={(event) => setLiveTime(event.target.value)}
+                    />
+                    <button
+                      type="submit"
+                      disabled={
+                        disabled ||
+                        clockMode ||
+                        parseLiveTime(liveTime) === null
+                      }
+                    >
+                      Set LIVE time
+                    </button>
+                    <p id="live-time-help" className="muted">
+                      Enter minutes or MM:SS (up to 999:00). Applies
+                      immediately; running stays running, paused stays paused.
+                    </p>
+                  </form>
+                </div>
               </div>
-            </section>
+              <section
+                className="panel duration-panel"
+                id="panel-staging"
+                hidden={outputTab === "live"}
+              >
+                <div className="section-heading">
+                  <h2>{legacy ? "Legacy controls" : "Prepare next output"}</h2>
+                  <span className="subtle-chip">
+                    {legacy
+                      ? "LIVE · Direct control"
+                      : "OFF AIR · Safe to edit"}
+                  </span>
+                </div>
+                <div
+                  className="display-mode-controls"
+                  role="group"
+                  aria-label="Prepared display mode"
+                >
+                  <button
+                    disabled={disabled}
+                    aria-pressed={
+                      legacy ? !clockMode : preparedMode === "countdown"
+                    }
+                    onClick={() =>
+                      outputCommand({
+                        type: "setDisplayMode",
+                        mode: "countdown",
+                      })
+                    }
+                  >
+                    <Timer size={16} />
+                    Countdown
+                  </button>
+                  <button
+                    disabled={disabled}
+                    aria-pressed={legacy ? clockMode : preparedMode === "clock"}
+                    onClick={() =>
+                      outputCommand({ type: "setDisplayMode", mode: "clock" })
+                    }
+                  >
+                    <Clock size={16} />
+                    Current Time
+                  </button>
+                </div>
+                <div className="clock-timezone-control">
+                  <label htmlFor="clock-timezone">Clock timezone</label>
+                  <select
+                    id="clock-timezone"
+                    disabled={disabled}
+                    value={legacy && clockMode ? clockTimeZone : preparedZone}
+                    onChange={(event) =>
+                      outputCommand({
+                        type: "setClockTimeZone",
+                        timeZone: event.target.value as ClockTimeZone,
+                      })
+                    }
+                  >
+                    {CLOCK_TIME_ZONES.map((zone) => (
+                      <option key={zone} value={zone}>
+                        {clockTimeZoneLabels[zone].label}
+                      </option>
+                    ))}
+                  </select>
+                  <p>
+                    {legacy
+                      ? "Timezone changes apply immediately to a LIVE clock. Daylight saving time is automatic."
+                      : "Off air until TAKE. Daylight saving time is automatic."}
+                  </p>
+                </div>
+                <div className="prepare-navigation">
+                  <button
+                    disabled={disabled || index <= 0}
+                    aria-label="Previous presenter"
+                    title="Prepare previous presenter; LIVE stays unchanged"
+                    onClick={() =>
+                      outputCommand({ type: "step", direction: -1 })
+                    }
+                  >
+                    <ChevronLeft size={18} /> Previous
+                  </button>
+                  <button
+                    disabled={disabled || index >= sessions.length - 1}
+                    aria-label="Next presenter"
+                    title="Prepare next presenter; LIVE stays unchanged"
+                    onClick={() =>
+                      outputCommand({ type: "step", direction: 1 })
+                    }
+                  >
+                    Next <ChevronRight size={18} />
+                  </button>
+                </div>
+                <div className="prepared-summary" hidden={legacy}>
+                  <span>
+                    {preparedMode === "clock"
+                      ? clockTimeZoneLabels[preparedZone].heading
+                      : (current?.name ?? "Preparing…")}
+                  </span>
+                  <div className="preview-clock">
+                    <Digits
+                      value={
+                        preparedMode === "clock"
+                          ? formatClockTime(serverNow, preparedZone)
+                          : formatTime(snapshot?.preparedDurationMs ?? 0)
+                      }
+                    />
+                  </div>
+                  <p>
+                    Session selection, modes, timezones, presets, and rundown
+                    edits stay off air. LIVE output keeps going until TAKE.
+                  </p>
+                </div>
+                <div className="presets">
+                  {[15, 30, 45, 60, 90].map((n) => (
+                    <button
+                      key={n}
+                      disabled={disabled}
+                      className={
+                        snapshot?.preparedDurationMs === n * 60000
+                          ? "selected"
+                          : ""
+                      }
+                      onClick={() =>
+                        outputCommand({
+                          type: "setDuration",
+                          durationMs: n * 60000,
+                        })
+                      }
+                    >
+                      {n}
+                      <span>min</span>
+                    </button>
+                  ))}
+                </div>
+                <form
+                  className="custom-duration"
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    const value = Number(custom);
+                    if (value >= 1 / 60 && value <= 999)
+                      outputCommand({
+                        type: "setDuration",
+                        durationMs: Math.round(value * 60000),
+                      });
+                  }}
+                >
+                  <label htmlFor="custom-duration">Custom duration</label>
+                  <div className="input-unit">
+                    <input
+                      id="custom-duration"
+                      type="number"
+                      min={1 / 60}
+                      max={999}
+                      step="any"
+                      required
+                      placeholder="Minutes"
+                      value={custom}
+                      onChange={(e) => setCustom(e.target.value)}
+                    />
+                    <span>min</span>
+                  </div>
+                  <button disabled={disabled || !custom} type="submit">
+                    {legacy ? "Load timer" : "Prepare timer"}
+                  </button>
+                </form>
+                <div className="prepared-actions" hidden={legacy}>
+                  <button
+                    className="primary take-button"
+                    disabled={disabled}
+                    onClick={() =>
+                      changeLive(
+                        { type: "take" },
+                        preparedMode === "clock"
+                          ? `Take ${clockTimeZoneLabels[preparedZone].label} clock LIVE.`
+                          : `Take ${current?.name ?? "the prepared timer"} LIVE, paused. Press Start when ready.`,
+                      )
+                    }
+                  >
+                    TAKE
+                  </button>
+                  <p>
+                    {preparedMode === "clock"
+                      ? "TAKE sends the selected clock to every display."
+                      : "TAKE loads this timer paused. Open LIVE Output and press Start to begin."}
+                  </p>
+                </div>
+              </section>
+            </div>
             <section className="panel display-panel">
               <span className="display-icon">
                 <Monitor size={21} />
@@ -868,8 +917,9 @@ function Controller({ onLogout }: { onLogout: () => void }) {
               </button>
             </div>
             <p className="rundown-edit-note">
-              Edit, add, delete, reorder, or select sessions freely. Everything
-              here stays off air until you press TAKE.
+              {legacy
+                ? "Select a session to load it LIVE, paused. Editing, adding, deleting and reordering stay off air."
+                : "Edit, add, delete, reorder, or select sessions freely. Everything here stays off air until you press TAKE."}
             </p>
             <div className="rundown-meta">
               <span>PRESENTER / SESSION</span>
@@ -889,12 +939,16 @@ function Controller({ onLogout }: { onLogout: () => void }) {
                     </span>
                     <button
                       className="session-select"
-                      aria-label={`Prepare ${session.name}`}
-                      title="Prepare this session; LIVE output stays unchanged"
+                      aria-label={`${legacy ? "Load" : "Prepare"} ${session.name}`}
+                      title={
+                        legacy
+                          ? "Load this session LIVE, paused"
+                          : "Prepare this session; LIVE output stays unchanged"
+                      }
                       disabled={disabled}
                       onClick={() => {
-                        command({ type: "select", id: session.id });
-                        setOutputTab("staging");
+                        outputCommand({ type: "select", id: session.id });
+                        if (!legacy) setOutputTab("staging");
                       }}
                     >
                       <span>{session.name}</span>
@@ -993,9 +1047,9 @@ function Controller({ onLogout }: { onLogout: () => void }) {
               <div>
                 <strong>You call the start.</strong>
                 <p>
-                  Selecting sessions only prepares them. Press TAKE to send the
-                  prepared output LIVE. Countdowns load paused and require
-                  Start.
+                  {legacy
+                    ? "Selecting a session loads it LIVE immediately, paused. Press Start when your presenter is ready."
+                    : "Selecting sessions only prepares them. Press TAKE to send the prepared output LIVE. Countdowns load paused and require Start."}
                 </p>
               </div>
             </div>
