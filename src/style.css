@@ -1235,3 +1235,20 @@ body:has(.presenter-display) {
   flex: 1;
   min-height: 46px;
 }
+
+.dashboard-grid.display-workspace {
+  grid-template-columns: minmax(0, 1fr);
+}
+.output-display-preview {
+  background: #000;
+  color: #fff;
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+}
+.output-display-preview .digits span {
+  font-weight: 700;
+  letter-spacing: -0.035em;
+}
+.output-display-preview .zero {
+  color: #ff0000;
+}

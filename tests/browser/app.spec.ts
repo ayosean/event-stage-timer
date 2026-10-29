@@ -27,7 +27,7 @@ async function publish(page: Page, button: Locator) {
   if (await confirm.isVisible()) await confirm.click();
   await expect(page.getByRole("dialog")).toHaveCount(0);
 }
-async function tab(page: Page, name: "LIVE Output" | "Staging" | "Legacy") {
+async function tab(page: Page, name: "LIVE Output" | "Staging" | "Display") {
   await page.getByRole("tab", { name, exact: true }).click();
 }
 async function startPrepared(page: Page, minutes: number) {
@@ -503,7 +503,7 @@ test("LIVE and Staging tabs share large previews and never change output when sw
   });
 });
 
-test("Legacy tab restores direct controls while entering/leaving it leaves LIVE untouched", async ({
+test("LIVE Output uses direct controls while switching tabs leaves LIVE untouched", async ({
   page,
   context,
 }, testInfo) => {
@@ -512,7 +512,7 @@ test("Legacy tab restores direct controls while entering/leaving it leaves LIVE 
   await startPrepared(page, 90);
   await addSession(page, presenter);
   const before = await output(page);
-  await tab(page, "Legacy");
+  await tab(page, "LIVE Output");
   expect((await output(page)).timer).toEqual(before.timer);
   await expect(
     page.getByRole("button", { name: "TAKE", exact: true }),
@@ -544,7 +544,7 @@ test("Legacy tab restores direct controls while entering/leaving it leaves LIVE 
   await expect(viewer.locator("main")).toHaveText("25:00");
   expect((await output(page)).timer.status).toBe("ready");
   await expect(
-    page.getByRole("tab", { name: "Legacy", exact: true }),
+    page.getByRole("tab", { name: "LIVE Output", exact: true }),
   ).toHaveAttribute("aria-selected", "true");
   await page.getByLabel("Custom duration").fill("12.5");
   await page.getByRole("button", { name: "Load timer", exact: true }).click();
@@ -562,9 +562,56 @@ test("Legacy tab restores direct controls while entering/leaving it leaves LIVE 
   await page.getByRole("button", { name: "45 min", exact: true }).click();
   expect((await output(page)).timer).toEqual(clock.timer);
   expect((await output(page)).displayMode).toBe("clock");
-  await tab(page, "Legacy");
+  await tab(page, "LIVE Output");
   expect((await output(page)).displayMode).toBe("clock");
   await page.getByRole("button", { name: "Countdown", exact: true }).click();
   await expect(viewer.locator("main")).toHaveText("45:00");
   expect((await output(page)).timer.status).toBe("ready");
+});
+
+test("Display tab matches presenter output without controls and follows live changes", async ({
+  page,
+  context,
+}) => {
+  await login(page);
+  await startPrepared(page, 30);
+  await page.getByRole("button", { name: "Pause", exact: true }).click();
+  const before = await output(page);
+  await tab(page, "Display");
+  expect((await output(page)).revision).toBe(before.revision);
+  const preview = page.locator(".output-display-preview");
+  await expect(preview).toHaveText("30:00");
+  await expect(preview).toHaveCSS("background-color", "rgb(0, 0, 0)");
+  await expect(preview.locator("button,input,a,select")).toHaveCount(0);
+  await expect(page.locator(".rundown-panel")).toBeHidden();
+  await expect(page.locator("#panel-live")).toBeHidden();
+  await expect(page.locator("#panel-staging")).toBeHidden();
+  const other = await context.newPage();
+  await login(other);
+  await other.getByLabel("Custom LIVE time", { exact: true }).fill("0:00");
+  await other
+    .getByRole("button", { name: "Set LIVE time", exact: true })
+    .click();
+  await expect(preview).toHaveText("00:00");
+  await expect(preview.locator(".digits")).toHaveCSS("color", "rgb(255, 0, 0)");
+  await other
+    .getByRole("button", { name: "Current Time", exact: true })
+    .click();
+  await other
+    .getByLabel("Clock timezone", { exact: true })
+    .selectOption("America/New_York");
+  await expect(preview).toHaveText(/^\d{1,2}:\d{2}$/);
+  const viewer = await context.newPage();
+  await viewer.goto("/display");
+  await expect
+    .poll(
+      async () =>
+        (await preview.innerText()) ===
+        (await viewer.locator("main").innerText()),
+    )
+    .toBe(true);
+  await page.setViewportSize({ width: 390, height: 844 });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(
+    390,
+  );
 });

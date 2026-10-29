@@ -53,8 +53,7 @@ mode, or original session name.
   timezone choices are **Eastern — New York** (`America/New_York`) and
   **Pacific — San Francisco** (`America/Los_Angeles`). Modes and timezone
   changes are also off air until TAKE.
-  The following describes the default LIVE Output / Staging workflow. The optional
-  **Legacy** tab restores direct controls, as described below.
+  These preparation rules apply in **Staging**. **LIVE Output** uses direct controls, as described below.
 
 - **TAKE** is the only command that publishes a prepared output. Taking a
   countdown always loads its full prepared duration paused, with no deadline;
@@ -66,7 +65,7 @@ mode, or original session name.
   the existing LIVE timer. They never publish a different prepared session.
   Adding/subtracting 30 seconds or 1, 5, or 10 minutes preserves running/paused
   status. Overtime counts upward in red and supports pause/resume/adjustments.
-- **LIVE Output / Staging tabs** switch the dashboard view without sending any timer command. Both use a large time preview. Prepare sessions and clock settings in Staging, press TAKE, then open LIVE Output for Start/Pause and live adjustments. Selecting a session in the rundown opens Staging automatically.
+- **LIVE Output / Staging / Display tabs** switch the dashboard view without sending any timer command. Both use a large time preview. Prepare sessions and clock settings in Staging, press TAKE, then open LIVE Output for Start/Pause and live adjustments. Selecting a session in Staging stays off air; selecting one in LIVE Output loads it immediately, paused.
 - **Custom LIVE time** under Adjust Live Time replaces the remaining countdown immediately. Enter minutes (`15`) or `MM:SS` (`12:30`), then select **Set LIVE time**. Running timers keep running; paused/ready timers stay stopped. This does not change the rundown, prepared duration, or original Reset duration. Clock output disables this control.
 - **Reset** restores the LIVE timer's original loaded duration, paused. Reset
   and display mode switches require confirmation when an output is active.
@@ -157,6 +156,10 @@ Browser tests start their own server on port 3000 with disposable test credentia
 
 On a laptop and landscape iPad using different networks: log in, prepare 90 minutes, press TAKE, start, pause/resume, add five minutes, reload the iPad, and disconnect/reconnect Wi-Fi. While LIVE is running, prepare 30 minutes, edit/delete its source agenda entry, and select a different presenter; verify the LIVE deadline is unchanged. Then explicitly TAKE the prepared timer and verify it stays ready until Start. Temporarily load a short duration and verify red `00:00` followed by increasing overtime. Redeploy once before the event and verify the same deadline and rundown return. Test Auto-Lock and Guided Access for longer than the device's normal sleep interval. Automated browser tests cannot verify the physical iPad's sleep settings.
 
-### Legacy direct-control tab
+### Dashboard tabs
 
-The **Legacy** tab shows LIVE output and the original direct controls together. Selecting a preset, custom duration, or presenter loads that countdown LIVE **paused** immediately. Current Time and clock timezone changes apply immediately; TAKE is hidden. Press Start manually to begin a countdown. Entering or leaving Legacy never sends a timer command. This is a local dashboard view, so other controllers keep their chosen workflow. LIVE Output and Staging retain the TAKE workflow. Rundown edits, adding, deleting and reordering remain off air in every view.
+- **LIVE Output** is the direct-control dashboard (formerly Legacy). Presets, custom durations and presenter selection load a countdown LIVE paused. Current Time and timezone changes apply immediately to a LIVE clock. Start is always manual. Previous/Next sit under Start/Pause. Rundown editing, adding, deleting and reordering stay off air.
+- **Staging** prepares another output off air. Press TAKE to publish it, then open LIVE Output and press Start when ready.
+- **Display** shows only the current presenter output in a black preview, including the selected clock timezone and red overtime. It has no timer controls and follows changes made by other controllers.
+
+Switching tabs never sends a timer command. LIVE Output uses the original direct-control workflow; Staging retains TAKE and confirmation for replacing active output.

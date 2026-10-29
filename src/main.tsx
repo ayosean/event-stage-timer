@@ -343,7 +343,7 @@ function Controller({ onLogout }: { onLogout: () => void }) {
     pending,
     clearError,
   } = useTimer("controller", true, onLogout);
-  const [outputTab, setOutputTab] = useState<"live" | "staging" | "legacy">(
+  const [outputTab, setOutputTab] = useState<"live" | "staging" | "display">(
     "live",
   );
   const [liveTime, setLiveTime] = useState("");
@@ -357,7 +357,7 @@ function Controller({ onLogout }: { onLogout: () => void }) {
       revision: number;
       label: string;
     } | null>(null);
-  const legacy = outputTab === "legacy";
+  const legacy = outputTab === "live";
   function outputCommand(action: LegacyAction) {
     command(legacy ? { type: "legacy", action } : action);
   }
@@ -482,7 +482,9 @@ function Controller({ onLogout }: { onLogout: () => void }) {
             </button>
           </div>
         )}
-        <div className="dashboard-grid">
+        <div
+          className={`dashboard-grid ${outputTab === "display" ? "display-workspace" : ""}`}
+        >
           <section className="timer-column">
             <div className="output-tabs-bar">
               <div
@@ -490,7 +492,7 @@ function Controller({ onLogout }: { onLogout: () => void }) {
                 role="tablist"
                 aria-label="Output workspace"
               >
-                {(["live", "staging", "legacy"] as const).map((tab) => (
+                {(["live", "staging", "display"] as const).map((tab) => (
                   <button
                     key={tab}
                     id={`tab-${tab}`}
@@ -506,7 +508,7 @@ function Controller({ onLogout }: { onLogout: () => void }) {
                         )
                       ) {
                         event.preventDefault();
-                        const tabs = ["live", "staging", "legacy"] as const;
+                        const tabs = ["live", "staging", "display"] as const;
                         const next =
                           event.key === "Home"
                             ? tabs[0]
@@ -522,12 +524,18 @@ function Controller({ onLogout }: { onLogout: () => void }) {
                       }
                     }}
                   >
-                    {tab === "live" ? <Radio size={16} /> : <Timer size={16} />}
+                    {tab === "live" ? (
+                      <Radio size={16} />
+                    ) : tab === "display" ? (
+                      <Monitor size={16} />
+                    ) : (
+                      <Timer size={16} />
+                    )}
                     {tab === "live"
                       ? "LIVE Output"
                       : tab === "staging"
                         ? "Staging"
-                        : "Legacy"}
+                        : "Display"}
                   </button>
                 ))}
               </div>
@@ -545,17 +553,30 @@ function Controller({ onLogout }: { onLogout: () => void }) {
               role="tabpanel"
               aria-labelledby={`tab-${outputTab}`}
             >
+              {outputTab === "display" && (
+                <div className="output-display-preview">
+                  <Digits
+                    display
+                    value={
+                      clockMode
+                        ? formatClockTime(serverNow, clockTimeZone)
+                        : formatTime(ms)
+                    }
+                    red={!clockMode && ms <= 0}
+                  />
+                </div>
+              )}
               {legacy && (
                 <p className="legacy-notice" role="note">
-                  Legacy mode · Presets, presenter selection and clock controls
-                  change LIVE immediately. Countdown timers load paused. Rundown
-                  edits stay off air.
+                  Direct LIVE controls · Presets, presenter selection and clock
+                  controls change LIVE immediately. Countdown timers load
+                  paused. Rundown edits stay off air.
                 </p>
               )}
               <div
                 className="panel timer-panel"
                 id="panel-live"
-                hidden={outputTab === "staging"}
+                hidden={outputTab !== "live"}
               >
                 <div className="timer-panel-heading">
                   <span className="eyebrow">
@@ -715,10 +736,10 @@ function Controller({ onLogout }: { onLogout: () => void }) {
               <section
                 className="panel duration-panel"
                 id="panel-staging"
-                hidden={outputTab === "live"}
+                hidden={outputTab === "display"}
               >
                 <div className="section-heading">
-                  <h2>{legacy ? "Legacy controls" : "Prepare next output"}</h2>
+                  <h2>{legacy ? "LIVE controls" : "Prepare next output"}</h2>
                   <span className="subtle-chip">
                     {legacy
                       ? "LIVE · Direct control"
@@ -878,7 +899,10 @@ function Controller({ onLogout }: { onLogout: () => void }) {
                 </div>
               </section>
             </div>
-            <section className="panel display-panel">
+            <section
+              className="panel display-panel"
+              hidden={outputTab === "display"}
+            >
               <span className="display-icon">
                 <Monitor size={21} />
               </span>
@@ -907,7 +931,10 @@ function Controller({ onLogout }: { onLogout: () => void }) {
               </button>
             </section>
           </section>
-          <aside className="panel rundown-panel">
+          <aside
+            className="panel rundown-panel"
+            hidden={outputTab === "display"}
+          >
             <div className="rundown-header">
               <div>
                 <p className="eyebrow">THE RUN OF SHOW</p>
