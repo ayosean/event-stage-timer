@@ -379,3 +379,45 @@ test("overtime survives planning and stale LIVE confirmations cannot replace out
   await other.close();
   await context.close();
 });
+
+test("custom LIVE time sets an exact paused time and adjusts running time without TAKE or changing preparation", async ({
+  page,
+  context,
+}) => {
+  await login(page);
+  await startPrepared(page, 90);
+  const viewer = await context.newPage();
+  await viewer.goto("/display");
+  await page.getByRole("button", { name: "Pause", exact: true }).click();
+  await page.getByRole("button", { name: "15 min", exact: true }).click();
+  await page.getByLabel("Custom LIVE time", { exact: true }).fill("12:30");
+  await page
+    .getByRole("button", { name: "Set LIVE time", exact: true })
+    .click();
+  await expect(viewer.locator(".display-digits span")).toHaveText("12:30");
+  expect((await output(page)).timer.status).toBe("paused");
+  await viewer.reload();
+  await expect(viewer.locator(".display-digits span")).toHaveText("12:30");
+  await page.getByLabel("Custom LIVE time", { exact: true }).fill("1:60");
+  await expect(
+    page.getByRole("button", { name: "Set LIVE time", exact: true }),
+  ).toBeDisabled();
+  await page.getByLabel("Custom LIVE time", { exact: true }).fill("5");
+  await page.getByLabel("Custom LIVE time", { exact: true }).press("Enter");
+  await expect(viewer.locator(".display-digits span")).toHaveText("05:00");
+  await page.getByRole("button", { name: "Resume", exact: true }).click();
+  await page.getByLabel("Custom LIVE time", { exact: true }).fill("2:30");
+  await page
+    .getByRole("button", { name: "Set LIVE time", exact: true })
+    .click();
+  await expect
+    .poll(async () => {
+      const s = await output(page);
+      return s.timer.remainingMs;
+    })
+    .toBe(150000);
+  expect((await output(page)).timer.status).toBe("running");
+  await expect(
+    page.getByRole("button", { name: "15 min", exact: true }),
+  ).toHaveClass(/selected/);
+});

@@ -1123,3 +1123,34 @@ body:has(.presenter-display) {
   line-height: 1.6;
   align-self: center;
 }
+
+.live-time-form {
+  display: grid;
+  grid-template-columns: auto minmax(90px, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  margin-top: 18px;
+}
+.live-time-form label {
+  font-size: 12px;
+}
+.live-time-form input {
+  min-width: 0;
+  font-variant-numeric: tabular-nums;
+}
+.live-time-form button {
+  padding: 10px 14px;
+}
+.live-time-form p {
+  grid-column: 1 / -1;
+  font-size: 11px;
+  margin: 0;
+}
+@media (max-width: 560px) {
+  .live-time-form {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+  .live-time-form label {
+    grid-column: 1 / -1;
+  }
+}

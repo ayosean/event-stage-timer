@@ -29,7 +29,12 @@ import {
   Trash2,
   X,
 } from "lucide-react";
-import { formatTime, type Command, type Session } from "../shared/timer";
+import {
+  formatTime,
+  parseLiveTime,
+  type Command,
+  type Session,
+} from "../shared/timer";
 import { useTimer } from "./useTimer";
 import "./style.css";
 function Digits({
@@ -337,6 +342,7 @@ function Controller({ onLogout }: { onLogout: () => void }) {
     pending,
     clearError,
   } = useTimer("controller", true, onLogout);
+  const [liveTime, setLiveTime] = useState("");
   const [custom, setCustom] = useState(""),
     [editor, setEditor] = useState<Session | null | undefined>(undefined),
     [copied, setCopied] = useState(false),
@@ -556,6 +562,40 @@ function Controller({ onLogout }: { onLogout: () => void }) {
                     );
                   })}
                 </div>
+                <form
+                  className="live-time-form"
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    const remainingMs = parseLiveTime(liveTime);
+                    if (remainingMs !== null && !disabled && !clockMode)
+                      command({ type: "setLiveTime", remainingMs });
+                  }}
+                >
+                  <label htmlFor="live-time">Custom LIVE time</label>
+                  <input
+                    id="live-time"
+                    type="text"
+                    placeholder="12:30 or 15"
+                    value={liveTime}
+                    maxLength={6}
+                    autoComplete="off"
+                    aria-describedby="live-time-help"
+                    disabled={disabled || clockMode}
+                    onChange={(event) => setLiveTime(event.target.value)}
+                  />
+                  <button
+                    type="submit"
+                    disabled={
+                      disabled || clockMode || parseLiveTime(liveTime) === null
+                    }
+                  >
+                    Set LIVE time
+                  </button>
+                  <p id="live-time-help" className="muted">
+                    Enter minutes or MM:SS (up to 999:00). Applies immediately;
+                    running stays running, paused stays paused.
+                  </p>
+                </form>
               </div>
             </div>
             <section className="panel duration-panel">

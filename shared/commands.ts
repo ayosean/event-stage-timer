@@ -19,6 +19,10 @@ export const commandSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("reset") }),
   z.object({ type: z.literal("setDuration"), durationMs: duration }),
   z.object({
+    type: z.literal("setLiveTime"),
+    remainingMs: z.number().int().min(0).max(MAX_MS),
+  }),
+  z.object({
     type: z.literal("adjust"),
     deltaMs: z.union([
       z.literal(30000),

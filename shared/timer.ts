@@ -60,6 +60,13 @@ export function formatTime(ms: number) {
     .toString()
     .padStart(2, "0")}:${(seconds % 60).toString().padStart(2, "0")}`;
 }
+// A plain number is minutes; a colon explicitly separates minutes/seconds.
+export function parseLiveTime(input: string): number | null {
+  const match = /^(\d{1,3})(?::([0-5]\d))?$/.exec(input.trim());
+  if (!match) return null;
+  const ms = (Number(match[1]) * 60 + Number(match[2] ?? 0)) * 1000;
+  return ms <= MAX_MS ? ms : null;
+}
 export function initialState(): State {
   const session = {
     id: crypto.randomUUID(),
@@ -205,6 +212,18 @@ export function reduce(input: State, command: Command, now: number): State {
       session(state.selectedId).durationMs = command.durationMs;
       state.preparedDurationMs = command.durationMs;
       break;
+    case "setLiveTime": {
+      if (state.displayMode !== "countdown")
+        throw new Error(
+          "Use TAKE to show a countdown before setting LIVE time.",
+        );
+      timer.remainingMs = command.remainingMs;
+      if (timer.status === "running")
+        timer.deadline = now + command.remainingMs;
+      // Keep ready/paused timers stopped, including when setting zero.
+      if (timer.status === "expired") timer.status = "paused";
+      break;
+    }
     case "adjust": {
       const value = Math.min(MAX_MS, remaining(timer, now) + command.deltaMs);
       timer.remainingMs = value;

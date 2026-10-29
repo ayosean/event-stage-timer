@@ -14,6 +14,7 @@ import {
   reduce,
   remaining,
   normalizeState,
+  parseLiveTime,
 } from "../shared/timer.js";
 function takeAndStartState(
   state: ReturnType<typeof initialState>,
@@ -981,6 +982,7 @@ test("LIVE and prepared timezones survive restart independently and viewers cann
     assert.equal(snapshot.clockTimeZone, "America/New_York");
     assert.equal(snapshot.preparedClockTimeZone, undefined);
     for (const command of [
+      { type: "setLiveTime", remainingMs: 60000 },
       { type: "take" },
       { type: "setClockTimeZone", timeZone: "America/Los_Angeles" },
     ]) {
@@ -1014,4 +1016,79 @@ test("timezone migration preserves old running deadlines and Pacific output", ()
   assert.equal(restored.clockTimeZone, "America/Los_Angeles");
   assert.equal(restored.preparedClockTimeZone, "America/Los_Angeles");
   assert.equal(restored.preparedDisplayMode, "countdown");
+});
+
+test("custom LIVE input accepts minutes or MM:SS and rejects ambiguous or out-of-range values", () => {
+  for (const [text, ms] of [
+    ["15", 900000],
+    ["12:30", 750000],
+    ["00:00", 0],
+    ["999:00", 59940000],
+    [" 0:30 ", 30000],
+  ] as const)
+    assert.equal(parseLiveTime(text), ms);
+  for (const text of [
+    "",
+    "1:60",
+    "-5",
+    "1.5",
+    "12:3",
+    "999:01",
+    "1000",
+    "1:00:00",
+  ])
+    assert.equal(parseLiveTime(text), null);
+  for (const ms of [-1, 59940001, 1.5, Infinity])
+    assert.equal(
+      commandSchema.safeParse({ type: "setLiveTime", remainingMs: ms }).success,
+      false,
+    );
+});
+test("custom LIVE time replaces remaining time without changing rundown, prepared output or running state and survives restart", async () => {
+  const f = await fixture();
+  try {
+    const started = await f.takeAndStart();
+    await f.command({ type: "setDuration", durationMs: 1800000 });
+    const before = f.service.getState();
+    f.advance(45000);
+    const changed = await f.command({
+      type: "setLiveTime",
+      remainingMs: 750000,
+    });
+    assert.equal(changed.timer.status, "running");
+    assert.equal(changed.timer.deadline, f.now + 750000);
+    assert.equal(changed.timer.startedAt, started.timer.startedAt);
+    assert.equal(changed.timer.durationMs, started.timer.durationMs);
+    assert.deepEqual(changed.sessions, before.sessions);
+    assert.equal(changed.preparedDurationMs, before.preparedDurationMs);
+    assert.deepEqual(changed.liveSession, before.liveSession);
+    const viewer = await f.open("display");
+    assert.equal(
+      (await viewer.next("state")).timer.deadline,
+      changed.timer.deadline,
+    );
+    await f.restart();
+    assert.deepEqual(f.service.getState().timer, changed.timer);
+    await f.command({ type: "pause" });
+    const paused = await f.command({ type: "setLiveTime", remainingMs: 30000 });
+    assert.equal(paused.timer.status, "paused");
+    assert.equal(paused.timer.deadline, null);
+    f.advance(10000);
+    assert.equal(remaining(f.service.getState().timer, f.now), 30000);
+    await f.command({ type: "start" });
+    const zero = await f.command({ type: "setLiveTime", remainingMs: 0 });
+    assert.equal(formatTime(remaining(zero.timer, f.now)), "00:00");
+    f.advance(1000);
+    assert.equal(remaining(f.service.getState().timer, f.now), -1000);
+    await f.command({ type: "reset" });
+    const ready = await f.command({ type: "setLiveTime", remainingMs: 120000 });
+    assert.equal(ready.timer.status, "ready");
+    assert.equal(ready.timer.deadline, null);
+    const clock = await f.takeClock();
+    assert.throws(() =>
+      reduce(clock, { type: "setLiveTime", remainingMs: 60000 }, f.now),
+    );
+  } finally {
+    await f.close();
+  }
 });
