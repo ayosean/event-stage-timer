@@ -1,5 +1,6 @@
 import { test, expect, type Page, type Locator } from "@playwright/test";
-import { formatPacificTime, type Snapshot } from "../../shared/timer";
+import { type Snapshot } from "../../shared/timer";
+import { formatClockTime } from "../../shared/clock";
 
 async function login(page: Page) {
   await page.goto("/controller");
@@ -27,13 +28,13 @@ async function publish(page: Page, button: Locator) {
   await expect(page.getByRole("dialog")).toHaveCount(0);
 }
 async function startPrepared(page: Page, minutes: number) {
+  await page.getByRole("button", { name: "Countdown", exact: true }).click();
   await page
     .getByRole("button", { name: `${minutes} min`, exact: true })
     .click();
-  await publish(
-    page,
-    page.getByRole("button", { name: "Start prepared LIVE", exact: true }),
-  );
+  await publish(page, page.getByRole("button", { name: "TAKE", exact: true }));
+  await expect(page.getByText("READY TO START", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Start timer", exact: true }).click();
   await expect(page.getByText("RUNNING", { exact: true })).toBeVisible();
 }
 function output(page: Page): Promise<Snapshot> {
@@ -74,6 +75,7 @@ async function addSession(page: Page, name: string) {
   ).toBeVisible();
 }
 async function agendaWork(page: Page, suffix: string) {
+  await page.getByRole("button", { name: "Countdown", exact: true }).click();
   const source = await page
     .locator(".timer-panel .session-heading h2")
     .innerText();
@@ -216,17 +218,12 @@ test("all agenda work including deleting LIVE source is off air; publishing paus
     source,
   );
   await expect(page.locator(".prepared-summary strong")).toHaveText("17:30");
-  await page
-    .getByRole("button", { name: "Show prepared paused", exact: true })
-    .click();
+  await page.getByRole("button", { name: "TAKE", exact: true }).click();
   await page
     .getByRole("button", { name: "Keep LIVE unchanged", exact: true })
     .click();
   expect((await output(viewer)).timer).toEqual(before.timer);
-  await publish(
-    page,
-    page.getByRole("button", { name: "Show prepared paused", exact: true }),
-  );
+  await publish(page, page.getByRole("button", { name: "TAKE", exact: true }));
   await expect(viewer.locator("main")).toHaveText("17:30");
   await expect(page.getByText("READY TO START", { exact: true })).toBeVisible();
   await viewer.waitForTimeout(1100);
@@ -242,17 +239,26 @@ test("all agenda work including deleting LIVE source is off air; publishing paus
   await context.close();
 });
 
-test("LIVE Pacific clock stays visible through all planning, refresh and offline time", async ({
+test("Eastern/Pacific clock selection stays off air until TAKE and survives refresh/offline", async ({
   page,
   browser,
 }, testInfo) => {
   await login(page);
   await startPrepared(page, 30);
-  await publish(
-    page,
-    page.getByRole("button", { name: "Current Time", exact: true }),
-  );
-  await expect(page.getByText("PACIFIC TIME", { exact: true })).toBeVisible();
+  const running = await output(page);
+  await page.getByRole("button", { name: "Current Time", exact: true }).click();
+  await page
+    .getByLabel("Clock timezone", { exact: true })
+    .selectOption("America/New_York");
+  expect((await output(page)).displayMode).toBe("countdown");
+  expect((await output(page)).timer).toEqual(running.timer);
+  await page.getByRole("button", { name: "TAKE", exact: true }).click();
+  await page
+    .getByRole("button", { name: "Keep LIVE unchanged", exact: true })
+    .click();
+  expect((await output(page)).timer).toEqual(running.timer);
+  await publish(page, page.getByRole("button", { name: "TAKE", exact: true }));
+  await expect(page.getByText("EASTERN TIME", { exact: true })).toBeVisible();
   const context = await browser.newContext({
     viewport: { width: 1194, height: 834 },
     timezoneId: "Asia/Tokyo",
@@ -267,19 +273,41 @@ test("LIVE Pacific clock stays visible through all planning, refresh and offline
     .poll(async () => {
       const text = await viewer.locator("main").innerText();
       return [-1000, 0, 1000].some(
-        (offset) => formatPacificTime(Date.now() + offset) === text,
+        (offset) =>
+          formatClockTime(Date.now() + offset, "America/New_York") === text,
       );
     })
     .toBe(true);
   const before = await output(viewer);
+  const second = await context.newPage();
+  await second.goto("/display");
+  await expect(second.locator("main")).toHaveText(
+    await viewer.locator("main").innerText(),
+  );
   await agendaWork(page, `clock-${testInfo.project.name}`);
-  await page.getByRole("button", { name: "15 min", exact: true }).click();
-  const after = await output(viewer);
-  expect(after.displayMode).toBe("clock");
-  expect(after.timer).toEqual(before.timer);
-  await expect(
-    page.getByRole("button", { name: "Current Time", exact: true }),
-  ).toHaveAttribute("aria-pressed", "true");
+  expect((await output(viewer)).displayMode).toBe("clock");
+  expect((await output(viewer)).timer).toEqual(before.timer);
+  await page.getByRole("button", { name: "Current Time", exact: true }).click();
+  await page
+    .getByLabel("Clock timezone", { exact: true })
+    .selectOption("America/Los_Angeles");
+  expect((await output(viewer)).clockTimeZone).toBe("America/New_York");
+  await publish(page, page.getByRole("button", { name: "TAKE", exact: true }));
+  await expect(page.getByText("PACIFIC TIME", { exact: true })).toBeVisible();
+  await expect
+    .poll(async () => {
+      const text = await viewer.locator("main").innerText();
+      return [-1000, 0, 1000].some(
+        (offset) =>
+          formatClockTime(Date.now() + offset, "America/Los_Angeles") === text,
+      );
+    })
+    .toBe(true);
+  expect((await output(viewer)).timer).toEqual(before.timer);
+  await page.reload();
+  await expect(page.getByLabel("Clock timezone", { exact: true })).toHaveValue(
+    "America/Los_Angeles",
+  );
   const previous = await viewer.locator("main").innerText();
   await context.setOffline(true);
   await viewer.clock.fastForward(61000);
@@ -293,22 +321,15 @@ test("LIVE Pacific clock stays visible through all planning, refresh and offline
     "color",
     "rgb(255, 255, 255)",
   );
-  await expect(viewer.locator("button,input,a")).toHaveCount(0);
-  await viewer.screenshot({
-    path: testInfo.outputPath("pacific-clock-ipad.png"),
-  });
+  await expect(viewer.locator("button,input,a,select")).toHaveCount(0);
+  await viewer.screenshot({ path: testInfo.outputPath("clock-ipad.png") });
   await page.getByRole("button", { name: "Countdown", exact: true }).click();
-  await expect(page.getByRole("dialog")).toBeVisible();
-  await page
-    .getByRole("button", { name: "Keep LIVE unchanged", exact: true })
-    .click();
   expect((await output(viewer)).displayMode).toBe("clock");
-  await publish(
-    page,
-    page.getByRole("button", { name: "Countdown", exact: true }),
-  );
-  await expect(page.getByText("PAUSED", { exact: true })).toBeVisible();
-  expect((await output(viewer)).timer).toEqual(before.timer);
+  await publish(page, page.getByRole("button", { name: "TAKE", exact: true }));
+  await expect(page.getByText("READY TO START", { exact: true })).toBeVisible();
+  await expect(viewer.locator("main")).toHaveText("17:30");
+  await viewer.waitForTimeout(1100);
+  await expect(viewer.locator("main")).toHaveText("17:30");
   await context.close();
 });
 
@@ -317,14 +338,13 @@ test("overtime survives planning and stale LIVE confirmations cannot replace out
   browser,
 }) => {
   await login(page);
+  await page.getByRole("button", { name: "Countdown", exact: true }).click();
   await page.getByLabel("Custom duration").fill("0.016666667");
   await page
     .getByRole("button", { name: "Prepare timer", exact: true })
     .click();
-  await publish(
-    page,
-    page.getByRole("button", { name: "Start prepared LIVE", exact: true }),
-  );
+  await publish(page, page.getByRole("button", { name: "TAKE", exact: true }));
+  await page.getByRole("button", { name: "Start timer", exact: true }).click();
   const context = await browser.newContext();
   const viewer = await context.newPage();
   await viewer.goto("/display");
@@ -335,9 +355,7 @@ test("overtime survives planning and stale LIVE confirmations cannot replace out
   const before = await output(viewer);
   await page.getByRole("button", { name: "60 min", exact: true }).click();
   expect((await output(viewer)).timer).toEqual(before.timer);
-  await page
-    .getByRole("button", { name: "Start prepared LIVE", exact: true })
-    .click();
+  await page.getByRole("button", { name: "TAKE", exact: true }).click();
   await expect(page.getByRole("dialog")).toBeVisible();
   const other = await page.context().newPage();
   await login(other);
@@ -348,10 +366,8 @@ test("overtime survives planning and stale LIVE confirmations cannot replace out
     .click();
   await expect(page.getByRole("alert")).toContainText("State changed");
   expect((await output(viewer)).timer).toEqual(before.timer);
-  await publish(
-    page,
-    page.getByRole("button", { name: "Start prepared LIVE", exact: true }),
-  );
+  await publish(page, page.getByRole("button", { name: "TAKE", exact: true }));
+  await page.getByRole("button", { name: "Start timer", exact: true }).click();
   await expect(page.getByText("RUNNING", { exact: true })).toBeVisible();
   await expect(viewer.locator(".digits")).toHaveCSS(
     "color",

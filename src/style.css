@@ -1068,3 +1068,58 @@ body:has(.presenter-display) {
   gap: 12px;
   padding: 0 24px 16px;
 }
+
+.clock-timezone-control {
+  margin: 0 0 20px;
+}
+.clock-timezone-control label {
+  display: block;
+  margin-bottom: 8px;
+  color: #a6aec2;
+  font-size: 12px;
+}
+.clock-timezone-control select {
+  width: 100%;
+  min-height: 44px;
+  padding: 10px 12px;
+  border: 1px solid #30333f;
+  border-radius: 8px;
+  background: #181b24;
+  color: #ecedf3;
+  font: inherit;
+  font-size: 13px;
+}
+.clock-timezone-control select:focus-visible {
+  outline: 2px solid #a18bff;
+  outline-offset: 2px;
+}
+.clock-timezone-control select:disabled {
+  opacity: 0.45;
+}
+.clock-timezone-control p {
+  margin: 8px 0 0;
+  color: #8f97ac;
+  font-size: 11px;
+  line-height: 1.6;
+}
+
+.duration-panel .display-mode-controls {
+  margin: 0 24px 18px;
+}
+.duration-panel .clock-timezone-control {
+  margin: 0 24px 20px;
+}
+.take-button {
+  min-width: 140px;
+  min-height: 52px;
+  font-size: 17px;
+  letter-spacing: 1px;
+}
+.prepared-actions p {
+  flex: 1 1 180px;
+  margin: 0;
+  color: #8f97ac;
+  font-size: 12px;
+  line-height: 1.6;
+  align-self: center;
+}

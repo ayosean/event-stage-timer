@@ -1,3 +1,4 @@
+import { CLOCK_TIME_ZONES } from "./clock.js";
 import { z } from "zod";
 import { MAX_MS } from "./timer.js";
 const duration = z.number().int().min(1000).max(MAX_MS);
@@ -5,12 +6,15 @@ const id = z.string().uuid();
 const name = z.string().trim().min(1).max(120);
 export const commandSchema = z.discriminatedUnion("type", [
   z.object({
+    type: z.literal("setClockTimeZone"),
+    timeZone: z.enum(CLOCK_TIME_ZONES),
+  }),
+  z.object({
     type: z.literal("setDisplayMode"),
     mode: z.enum(["countdown", "clock"]),
   }),
   z.object({ type: z.literal("start") }),
-  z.object({ type: z.literal("startPrepared") }),
-  z.object({ type: z.literal("loadPrepared") }),
+  z.object({ type: z.literal("take") }),
   z.object({ type: z.literal("pause") }),
   z.object({ type: z.literal("reset") }),
   z.object({ type: z.literal("setDuration"), durationMs: duration }),

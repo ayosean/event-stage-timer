@@ -1,3 +1,10 @@
+import {
+  CLOCK_TIME_ZONES,
+  DEFAULT_CLOCK_TIME_ZONE,
+  clockTimeZoneLabels,
+  formatClockTime,
+  type ClockTimeZone,
+} from "../shared/clock";
 import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import {
@@ -22,12 +29,7 @@ import {
   Trash2,
   X,
 } from "lucide-react";
-import {
-  formatTime,
-  formatPacificTime,
-  type Command,
-  type Session,
-} from "../shared/timer";
+import { formatTime, type Command, type Session } from "../shared/timer";
 import { useTimer } from "./useTimer";
 import "./style.css";
 function Digits({
@@ -67,6 +69,7 @@ function Digits({
 function Display() {
   const { ms, snapshot, serverNow } = useTimer("display");
   const clockMode = snapshot?.displayMode === "clock";
+  const clockTimeZone = snapshot?.clockTimeZone ?? DEFAULT_CLOCK_TIME_ZONE;
   useEffect(() => {
     document.title = "Countdown";
     let disposed = false;
@@ -115,7 +118,14 @@ function Display() {
     <main className="presenter-display">
       {snapshot && (
         <Digits
-          value={clockMode ? formatPacificTime(serverNow) : formatTime(ms)}
+          value={
+            clockMode
+              ? formatClockTime(
+                  serverNow,
+                  snapshot?.clockTimeZone ?? DEFAULT_CLOCK_TIME_ZONE,
+                )
+              : formatTime(ms)
+          }
           red={!clockMode && ms <= 0}
           display
         />
@@ -343,14 +353,15 @@ function Controller({ onLogout }: { onLogout: () => void }) {
   const liveSession = snapshot?.liveSession;
   const liveIndex = sessions.findIndex((s) => s.id === liveSession?.id);
   const clockMode = snapshot?.displayMode === "clock";
+  const clockTimeZone = snapshot?.clockTimeZone ?? DEFAULT_CLOCK_TIME_ZONE;
+  const preparedMode = snapshot?.preparedDisplayMode ?? "countdown";
+  const preparedZone = snapshot?.preparedClockTimeZone ?? clockTimeZone;
   const running = snapshot?.timer.status === "running";
   const overtime = !!snapshot && snapshot.timer.status !== "ready" && ms <= 0;
   const disabled = !connected || pending || !snapshot;
   const displayUrl = `${location.origin}/display`;
   function changeLive(next: Command, label: string) {
     if (!snapshot || disabled) return;
-    if (next.type === "setDisplayMode" && next.mode === snapshot.displayMode)
-      return;
     if (clockMode || snapshot.timer.status !== "ready")
       setLiveChange({ command: next, revision: snapshot.revision, label });
     else command(next, snapshot.revision);
@@ -432,38 +443,6 @@ function Controller({ onLogout }: { onLogout: () => void }) {
         <div className="dashboard-grid">
           <section className="timer-column">
             <div className="panel timer-panel">
-              <div
-                className="display-mode-controls"
-                role="group"
-                aria-label="LIVE presenter display mode"
-              >
-                <button
-                  disabled={disabled}
-                  aria-pressed={!clockMode}
-                  onClick={() =>
-                    changeLive(
-                      { type: "setDisplayMode", mode: "countdown" },
-                      "Show the existing countdown on LIVE, without starting it.",
-                    )
-                  }
-                >
-                  <Timer size={16} />
-                  Countdown
-                </button>
-                <button
-                  disabled={disabled}
-                  aria-pressed={clockMode}
-                  onClick={() =>
-                    changeLive(
-                      { type: "setDisplayMode", mode: "clock" },
-                      "Show Pacific current time on LIVE and pause the existing countdown.",
-                    )
-                  }
-                >
-                  <Clock size={16} />
-                  Current Time
-                </button>
-              </div>
               <div className="timer-panel-heading">
                 <span className="eyebrow">
                   <Radio size={14} />
@@ -473,7 +452,9 @@ function Controller({ onLogout }: { onLogout: () => void }) {
                   className={`status-pill ${!clockMode && overtime ? "overtime" : running ? "running" : ""}`}
                 >
                   {clockMode
-                    ? "PACIFIC TIME"
+                    ? clockTimeZone === "America/New_York"
+                      ? "EASTERN TIME"
+                      : "PACIFIC TIME"
                     : running
                       ? overtime
                         ? "OVERTIME"
@@ -495,21 +476,26 @@ function Controller({ onLogout }: { onLogout: () => void }) {
                 )}
                 <h2>
                   {clockMode
-                    ? "San Francisco · Pacific Time (PST/PDT)"
+                    ? clockTimeZoneLabels[clockTimeZone].heading
                     : (liveSession?.name ?? "Connecting…")}
                 </h2>
               </div>
               <div className="preview-clock">
                 <Digits
                   value={
-                    clockMode ? formatPacificTime(serverNow) : formatTime(ms)
+                    clockMode
+                      ? formatClockTime(
+                          serverNow,
+                          snapshot?.clockTimeZone ?? DEFAULT_CLOCK_TIME_ZONE,
+                        )
+                      : formatTime(ms)
                   }
                   red={!clockMode && ms <= 0}
                 />
               </div>
               <p className="timer-hint">
                 {clockMode
-                  ? "Current time is live on all displays. Countdown stays paused until you press Start or Resume."
+                  ? "Current time is live on all displays. Prepare another output off air, then press TAKE to change it."
                   : running
                     ? overtime
                       ? "Overtime is counting up on all connected displays."
@@ -521,16 +507,8 @@ function Controller({ onLogout }: { onLogout: () => void }) {
               <div className="transport">
                 <button
                   className={`primary start-button ${running ? "pause-button" : ""}`}
-                  disabled={disabled}
-                  onClick={() => {
-                    if (running) command({ type: "pause" });
-                    else if (clockMode)
-                      changeLive(
-                        { type: "start" },
-                        "Start or resume the existing LIVE countdown.",
-                      );
-                    else command({ type: "start" });
-                  }}
+                  disabled={disabled || clockMode}
+                  onClick={() => command({ type: running ? "pause" : "start" })}
                 >
                   {running ? <Pause size={21} /> : <Play size={21} />}{" "}
                   {running
@@ -540,7 +518,7 @@ function Controller({ onLogout }: { onLogout: () => void }) {
                       : "Start timer"}
                 </button>
                 <button
-                  disabled={disabled}
+                  disabled={disabled || clockMode}
                   className="reset-button"
                   onClick={() =>
                     changeLive(
@@ -567,7 +545,7 @@ function Controller({ onLogout }: { onLogout: () => void }) {
                     return (
                       <button
                         key={deltaMs}
-                        disabled={disabled}
+                        disabled={disabled || clockMode}
                         aria-label={`${deltaMs > 0 ? "Add" : "Subtract"} ${amount} ${seconds ? "seconds" : "minutes"}`}
                         onClick={() => command({ type: "adjust", deltaMs })}
                       >
@@ -582,8 +560,55 @@ function Controller({ onLogout }: { onLogout: () => void }) {
             </div>
             <section className="panel duration-panel">
               <div className="section-heading">
-                <h2>Prepare next timer</h2>
+                <h2>Prepare next output</h2>
                 <span className="subtle-chip">OFF AIR · Safe to edit</span>
+              </div>
+              <div
+                className="display-mode-controls"
+                role="group"
+                aria-label="Prepared display mode"
+              >
+                <button
+                  disabled={disabled}
+                  aria-pressed={preparedMode === "countdown"}
+                  onClick={() =>
+                    command({ type: "setDisplayMode", mode: "countdown" })
+                  }
+                >
+                  <Timer size={16} />
+                  Countdown
+                </button>
+                <button
+                  disabled={disabled}
+                  aria-pressed={preparedMode === "clock"}
+                  onClick={() =>
+                    command({ type: "setDisplayMode", mode: "clock" })
+                  }
+                >
+                  <Clock size={16} />
+                  Current Time
+                </button>
+              </div>
+              <div className="clock-timezone-control">
+                <label htmlFor="clock-timezone">Clock timezone</label>
+                <select
+                  id="clock-timezone"
+                  disabled={disabled}
+                  value={preparedZone}
+                  onChange={(event) =>
+                    command({
+                      type: "setClockTimeZone",
+                      timeZone: event.target.value as ClockTimeZone,
+                    })
+                  }
+                >
+                  {CLOCK_TIME_ZONES.map((zone) => (
+                    <option key={zone} value={zone}>
+                      {clockTimeZoneLabels[zone].label}
+                    </option>
+                  ))}
+                </select>
+                <p>Off air until TAKE. Daylight saving time is automatic.</p>
               </div>
               <div className="prepare-navigation">
                 <button
@@ -604,11 +629,19 @@ function Controller({ onLogout }: { onLogout: () => void }) {
                 </button>
               </div>
               <div className="prepared-summary">
-                <span>{current?.name ?? "Preparing…"}</span>
-                <strong>{formatTime(snapshot?.preparedDurationMs ?? 0)}</strong>
+                <span>
+                  {preparedMode === "clock"
+                    ? clockTimeZoneLabels[preparedZone].heading
+                    : (current?.name ?? "Preparing…")}
+                </span>
+                <strong>
+                  {preparedMode === "clock"
+                    ? formatClockTime(serverNow, preparedZone)
+                    : formatTime(snapshot?.preparedDurationMs ?? 0)}
+                </strong>
                 <p>
-                  Session selection, presets, and all rundown edits stay off
-                  air. LIVE output keeps going.
+                  Session selection, modes, timezones, presets, and rundown
+                  edits stay off air. LIVE output keeps going until TAKE.
                 </p>
               </div>
               <div className="presets">
@@ -663,28 +696,24 @@ function Controller({ onLogout }: { onLogout: () => void }) {
               </form>
               <div className="prepared-actions">
                 <button
-                  className="primary"
+                  className="primary take-button"
                   disabled={disabled}
                   onClick={() =>
                     changeLive(
-                      { type: "startPrepared" },
-                      `Start ${current?.name ?? "the prepared timer"} on LIVE.`,
+                      { type: "take" },
+                      preparedMode === "clock"
+                        ? `Take ${clockTimeZoneLabels[preparedZone].label} clock LIVE.`
+                        : `Take ${current?.name ?? "the prepared timer"} LIVE, paused. Press Start when ready.`,
                     )
                   }
                 >
-                  Start prepared LIVE
+                  TAKE
                 </button>
-                <button
-                  disabled={disabled}
-                  onClick={() =>
-                    changeLive(
-                      { type: "loadPrepared" },
-                      `Replace LIVE with ${current?.name ?? "the prepared timer"}, paused.`,
-                    )
-                  }
-                >
-                  Show prepared paused
-                </button>
+                <p>
+                  {preparedMode === "clock"
+                    ? "TAKE sends the selected clock to every display."
+                    : "TAKE loads this timer paused. Start begins the LIVE countdown."}
+                </p>
               </div>
             </section>
             <section className="panel display-panel">
@@ -735,8 +764,7 @@ function Controller({ onLogout }: { onLogout: () => void }) {
             </div>
             <p className="rundown-edit-note">
               Edit, add, delete, reorder, or select sessions freely. Everything
-              here stays off air until you explicitly send a prepared timer to
-              LIVE.
+              here stays off air until you press TAKE.
             </p>
             <div className="rundown-meta">
               <span>PRESENTER / SESSION</span>
@@ -859,9 +887,9 @@ function Controller({ onLogout }: { onLogout: () => void }) {
               <div>
                 <strong>You call the start.</strong>
                 <p>
-                  Selecting sessions only prepares them. Use Start prepared LIVE
-                  to take one on air, or Show prepared paused to load it without
-                  starting.
+                  Selecting sessions only prepares them. Press TAKE to send the
+                  prepared output LIVE. Countdowns load paused and require
+                  Start.
                 </p>
               </div>
             </div>

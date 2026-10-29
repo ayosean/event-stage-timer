@@ -1,3 +1,9 @@
+import {
+  DEFAULT_CLOCK_TIME_ZONE,
+  CLOCK_TIME_ZONES,
+  formatClockTime,
+  type ClockTimeZone,
+} from "./clock.js";
 import type { Command } from "./commands.js";
 export type { Command } from "./commands.js";
 export const MAX_MS = 999 * 60_000;
@@ -17,15 +23,19 @@ export interface Timer {
 export type DisplayMode = "countdown" | "clock";
 export interface State {
   displayMode: DisplayMode;
+  clockTimeZone: ClockTimeZone;
   revision: number;
   sessions: Session[];
   selectedId: string;
   preparedDurationMs: number;
+  preparedDisplayMode: DisplayMode;
+  preparedClockTimeZone: ClockTimeZone;
   liveSession: Session;
   timer: Timer;
 }
 export interface Snapshot {
   displayMode: DisplayMode;
+  clockTimeZone: ClockTimeZone;
   type: "state";
   revision: number;
   timer: Timer;
@@ -33,6 +43,8 @@ export interface Snapshot {
   sessions?: Session[];
   selectedId?: string;
   preparedDurationMs?: number;
+  preparedDisplayMode?: DisplayMode;
+  preparedClockTimeZone?: ClockTimeZone;
   liveSession?: Session;
   viewers?: number;
   commandId?: string;
@@ -56,10 +68,13 @@ export function initialState(): State {
   };
   return {
     displayMode: "countdown",
+    clockTimeZone: DEFAULT_CLOCK_TIME_ZONE,
     revision: 0,
     sessions: [session],
     selectedId: session.id,
     preparedDurationMs: session.durationMs,
+    preparedDisplayMode: "countdown",
+    preparedClockTimeZone: DEFAULT_CLOCK_TIME_ZONE,
     liveSession: { ...session },
     timer: ready(session.durationMs),
   };
@@ -80,8 +95,11 @@ export function normalizeState(state: State, now: number): State {
   const legacyExpired = state.timer.status === "expired";
   if (
     state.displayMode &&
+    CLOCK_TIME_ZONES.includes(state.clockTimeZone) &&
     state.preparedDurationMs !== undefined &&
     state.liveSession &&
+    state.preparedDisplayMode &&
+    CLOCK_TIME_ZONES.includes(state.preparedClockTimeZone) &&
     !legacyExpired
   )
     return state;
@@ -91,7 +109,19 @@ export function normalizeState(state: State, now: number): State {
   return {
     ...state,
     displayMode: state.displayMode ?? "countdown",
+    clockTimeZone: CLOCK_TIME_ZONES.includes(state.clockTimeZone)
+      ? state.clockTimeZone
+      : DEFAULT_CLOCK_TIME_ZONE,
     preparedDurationMs: state.preparedDurationMs ?? selected.durationMs,
+    preparedDisplayMode:
+      state.preparedDisplayMode ?? state.displayMode ?? "countdown",
+    preparedClockTimeZone: CLOCK_TIME_ZONES.includes(
+      state.preparedClockTimeZone,
+    )
+      ? state.preparedClockTimeZone
+      : CLOCK_TIME_ZONES.includes(state.clockTimeZone)
+        ? state.clockTimeZone
+        : DEFAULT_CLOCK_TIME_ZONE,
     liveSession: state.liveSession ?? {
       ...selected,
       durationMs: state.timer.durationMs,
@@ -108,18 +138,9 @@ export function normalizeState(state: State, now: number): State {
       : state.timer,
   };
 }
-const pacificClock = new Intl.DateTimeFormat("en-US", {
-  timeZone: "America/Los_Angeles",
-  hour: "numeric",
-  minute: "2-digit",
-  hour12: true,
-});
-export function formatPacificTime(epochMs: number): string {
-  const parts = pacificClock.formatToParts(epochMs);
-  const part = (type: Intl.DateTimeFormatPartTypes) =>
-    parts.find((p) => p.type === type)!.value;
-  return `${part("hour")}:${part("minute")}`;
-}
+// Retained for callers that explicitly need Pacific time.
+export const formatPacificTime = (epochMs: number) =>
+  formatClockTime(epochMs, DEFAULT_CLOCK_TIME_ZONE);
 export function reduce(input: State, command: Command, now: number): State {
   const state = structuredClone(normalizeState(input, now));
   const timer = state.timer;
@@ -141,26 +162,27 @@ export function reduce(input: State, command: Command, now: number): State {
     state.displayMode = "countdown";
   };
   switch (command.type) {
-    case "loadPrepared":
-      publish();
-      break;
-    case "startPrepared":
-      publish();
-      state.timer.status = "running";
-      state.timer.startedAt = now;
-      state.timer.deadline = now + state.timer.remainingMs;
+    case "setClockTimeZone":
+      state.preparedClockTimeZone = command.timeZone;
       break;
     case "setDisplayMode":
-      if (command.mode === "clock" && timer.status === "running") {
-        timer.remainingMs = remaining(timer, now);
-        timer.status = "paused";
-        timer.deadline = null;
-        timer.pausedAt = now;
-      }
-      state.displayMode = command.mode;
+      state.preparedDisplayMode = command.mode;
+      break;
+    case "take":
+      if (state.preparedDisplayMode === "clock") {
+        if (timer.status === "running") {
+          timer.remainingMs = remaining(timer, now);
+          timer.status = "paused";
+          timer.deadline = null;
+          timer.pausedAt = now;
+        }
+        state.displayMode = "clock";
+        state.clockTimeZone = state.preparedClockTimeZone;
+      } else publish();
       break;
     case "start":
-      state.displayMode = "countdown";
+      if (state.displayMode !== "countdown")
+        throw new Error("Use TAKE to show a countdown before starting it.");
       if (timer.status !== "running") {
         timer.status = "running";
         timer.deadline = now + timer.remainingMs;
@@ -177,7 +199,6 @@ export function reduce(input: State, command: Command, now: number): State {
       }
       break;
     case "reset":
-      state.displayMode = "countdown";
       state.timer = ready(timer.durationMs);
       break;
     case "setDuration":

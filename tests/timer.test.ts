@@ -1,3 +1,4 @@
+import { formatClockTime, DEFAULT_CLOCK_TIME_ZONE } from "../shared/clock.js";
 import { commandSchema } from "../shared/commands.js";
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -14,6 +15,21 @@ import {
   remaining,
   normalizeState,
 } from "../shared/timer.js";
+function takeAndStartState(
+  state: ReturnType<typeof initialState>,
+  now: number,
+) {
+  state = reduce(state, { type: "setDisplayMode", mode: "countdown" }, now);
+  state = reduce(state, { type: "take" }, now);
+  return reduce(state, { type: "start" }, now);
+}
+function takeClockState(state: ReturnType<typeof initialState>, now: number) {
+  return reduce(
+    reduce(state, { type: "setDisplayMode", mode: "clock" }, now),
+    { type: "take" },
+    now,
+  );
+}
 const password = "test-only-password-1234",
   secret = "test-only-session-secret-at-least-32-characters";
 async function fixture(
@@ -121,6 +137,15 @@ async function fixture(
       return time;
     },
     command,
+    takeAndStart: async () => {
+      await command({ type: "setDisplayMode", mode: "countdown" });
+      await command({ type: "take" });
+      return command({ type: "start" });
+    },
+    takeClock: async () => {
+      await command({ type: "setDisplayMode", mode: "clock" });
+      return command({ type: "take" });
+    },
     open,
     login,
     async restart() {
@@ -181,11 +206,11 @@ test("presets and custom durations stay off air until explicitly published, paus
       assert.deepEqual(prepared.timer, live.timer);
       assert.equal(prepared.preparedDurationMs, durationMs);
     }
-    let output = await f.command({ type: "loadPrepared" });
+    let output = await f.command({ type: "take" });
     assert.equal(output.timer.status, "ready");
     assert.equal(output.timer.deadline, null);
     assert.equal(output.timer.remainingMs, 125000);
-    output = await f.command({ type: "startPrepared" });
+    output = await f.takeAndStart();
     assert.equal(output.timer.deadline, f.now + 125000);
     output = await f.command({ type: "reset" });
     assert.equal(output.timer.status, "ready");
@@ -214,7 +239,8 @@ test("next, previous, and session selection only prepare; LIVE keeps its deadlin
       assert.deepEqual(state.liveSession, live.liveSession);
     }
     await f.command({ type: "step", direction: 1 });
-    const ready = await f.command({ type: "loadPrepared" });
+    await f.command({ type: "setDisplayMode", mode: "countdown" });
+    const ready = await f.command({ type: "take" });
     assert.equal(ready.timer.status, "ready");
     assert.equal(ready.timer.deadline, null);
     assert.equal(ready.timer.remainingMs, 1800000);
@@ -267,7 +293,7 @@ test("SQLite recovers rundown, selected session and running deadline after serve
       durationMs: 1800000,
     });
     await f.command({ type: "step", direction: 1 });
-    const before = await f.command({ type: "startPrepared" });
+    const before = await f.takeAndStart();
     f.advance(45000);
     await f.restart();
     const after = f.service.getState();
@@ -358,7 +384,7 @@ test("zero transitions into overtime and preserves the deadline after restart", 
   const f = await fixture();
   try {
     await f.command({ type: "setDuration", durationMs: 1000 });
-    const started = await f.command({ type: "startPrepared" });
+    const started = await f.takeAndStart();
     f.advance(1000);
     assert.equal(
       formatTime(remaining(f.service.getState().timer, f.now)),
@@ -414,7 +440,7 @@ test("deleting the LIVE source preserves output and chooses another prepared ses
   const id = state.selectedId;
   state = reduce(state, { type: "duplicate", id }, 0);
   const copy = state.sessions[1].id;
-  state = reduce(state, { type: "startPrepared" }, 0);
+  state = takeAndStartState(state, 0);
   const live = structuredClone(state);
   state = reduce(
     state,
@@ -451,7 +477,7 @@ test("a deadline that passes while the server is down recovers running in overti
   const f = await fixture();
   try {
     await f.command({ type: "setDuration", durationMs: 1000 });
-    await f.command({ type: "startPrepared" });
+    await f.takeAndStart();
     f.advance(5000);
     await f.restart();
     const state = f.service.getState();
@@ -491,7 +517,7 @@ test("overtime pause, resume, adjustments and the 15-minute preset preserve manu
   const f = await fixture();
   try {
     await f.command({ type: "setDuration", durationMs: 1000 });
-    await f.command({ type: "startPrepared" });
+    await f.takeAndStart();
     f.advance(31000);
     let s = await f.command({ type: "pause" });
     assert.equal(s.timer.remainingMs, -30000);
@@ -512,7 +538,7 @@ test("overtime pause, resume, adjustments and the 15-minute preset preserve manu
     const overtime = structuredClone(s.timer);
     s = await f.command({ type: "setDuration", durationMs: 900000 });
     assert.deepEqual(s.timer, overtime);
-    s = await f.command({ type: "loadPrepared" });
+    s = await f.command({ type: "take" });
     assert.equal(s.timer.status, "ready");
     assert.equal(s.timer.deadline, null);
     assert.equal(formatTime(remaining(s.timer, f.now)), "15:00");
@@ -529,7 +555,7 @@ test("an overtime viewer refresh or reconnect retains the original deadline", as
   const f = await fixture();
   try {
     await f.command({ type: "setDuration", durationMs: 1000 });
-    const started = await f.command({ type: "startPrepared" });
+    const started = await f.takeAndStart();
     f.advance(62000);
     let viewer = await f.open("display");
     let state = await viewer.next("state");
@@ -580,7 +606,7 @@ test("30-second adjustments preserve the running deadline, paused state and over
     assert.equal(state.timer.status, "paused");
     assert.equal(state.timer.remainingMs, paused);
     await f.command({ type: "setDuration", durationMs: 1000 });
-    await f.command({ type: "startPrepared" });
+    await f.takeAndStart();
     f.advance(16000);
     state = await f.command({ type: "adjust", deltaMs: 30000 });
     assert.equal(remaining(state.timer, f.now), 15000);
@@ -616,7 +642,7 @@ test("Current Time pauses the countdown and persists across restart without auto
   try {
     await f.command({ type: "start" });
     f.advance(12345);
-    const clock = await f.command({ type: "setDisplayMode", mode: "clock" });
+    const clock = await f.takeClock();
     assert.equal(clock.displayMode, "clock");
     assert.equal(clock.timer.status, "paused");
     assert.equal(clock.timer.remainingMs, 5400000 - 12345);
@@ -625,11 +651,14 @@ test("Current Time pauses the countdown and persists across restart without auto
     await f.restart();
     assert.deepEqual(f.service.getState(), clock);
     let state = await f.command({ type: "setDisplayMode", mode: "countdown" });
-    assert.equal(state.timer.status, "paused");
-    assert.equal(state.timer.remainingMs, clock.timer.remainingMs);
-    state = await f.command({ type: "start" });
-    assert.equal(state.timer.deadline, f.now + clock.timer.remainingMs);
+    assert.equal(state.displayMode, "clock");
+    assert.deepEqual(state.timer, clock.timer);
+    state = await f.command({ type: "take" });
     assert.equal(state.displayMode, "countdown");
+    assert.equal(state.timer.status, "ready");
+    assert.equal(state.timer.deadline, null);
+    state = await f.command({ type: "start" });
+    assert.equal(state.timer.deadline, f.now + state.preparedDurationMs);
   } finally {
     await f.close();
   }
@@ -641,7 +670,7 @@ test("preparing durations and presenters never replaces the LIVE Pacific clock",
     await f.command({ type: "add", name: "Next session", durationMs: 1800000 });
     const first = f.service.getState().selectedId;
     await f.command({ type: "start" });
-    const clock = await f.command({ type: "setDisplayMode", mode: "clock" });
+    const clock = await f.takeClock();
     for (const command of [
       { type: "setDuration", durationMs: 900000 },
       { type: "step", direction: 1 },
@@ -652,7 +681,8 @@ test("preparing durations and presenters never replaces the LIVE Pacific clock",
       assert.deepEqual(state.timer, clock.timer);
       assert.deepEqual(state.liveSession, clock.liveSession);
     }
-    const ready = await f.command({ type: "loadPrepared" });
+    await f.command({ type: "setDisplayMode", mode: "countdown" });
+    const ready = await f.command({ type: "take" });
     assert.equal(ready.displayMode, "countdown");
     assert.equal(ready.timer.status, "ready");
     assert.equal(ready.timer.deadline, null);
@@ -664,7 +694,7 @@ test("preparing durations and presenters never replaces the LIVE Pacific clock",
 test("read-only viewers restore clock mode on refresh/reconnect and cannot change modes", async () => {
   const f = await fixture();
   try {
-    await f.command({ type: "setDisplayMode", mode: "clock" });
+    await f.takeClock();
     let viewer = await f.open("display");
     let state = await viewer.next("state");
     assert.equal(state.displayMode, "clock");
@@ -725,11 +755,9 @@ for (const mode of [
     );
     const current = state.selectedId;
     const next = state.sessions[1].id;
-    if (mode !== "ready")
-      state = reduce(state, { type: "startPrepared" }, 1000);
+    if (mode !== "ready") state = takeAndStartState(state, 1000);
     if (mode === "paused") state = reduce(state, { type: "pause" }, 12345);
-    if (mode === "clock")
-      state = reduce(state, { type: "setDisplayMode", mode: "clock" }, 12345);
+    if (mode === "clock") state = takeClockState(state, 12345);
     const now = mode === "overtime" ? 6000000 : 15000;
     const before = structuredClone(state);
     const edit = (command: Parameters<typeof reduce>[1]) => {
@@ -754,11 +782,12 @@ for (const mode of [
     edit({ type: "delete", id: current });
     assert.ok(!state.sessions.some((session) => session.id === current));
     const preparedDuration = state.preparedDurationMs;
-    const loaded = reduce(state, { type: "loadPrepared" }, now);
+    state = reduce(state, { type: "setDisplayMode", mode: "countdown" }, now);
+    const loaded = reduce(state, { type: "take" }, now);
     assert.equal(loaded.timer.status, "ready");
     assert.equal(loaded.timer.remainingMs, preparedDuration);
     assert.equal(loaded.timer.deadline, null);
-    const started = reduce(state, { type: "startPrepared" }, now);
+    const started = takeAndStartState(state, now);
     assert.equal(started.timer.status, "running");
     assert.equal(started.timer.deadline, now + preparedDuration);
   });
@@ -769,9 +798,9 @@ for (const clock of [false, true]) {
     const f = await fixture();
     try {
       await f.command({ type: "add", name: "Upcoming", durationMs: 1800000 });
-      await f.command({ type: "startPrepared" });
+      await f.takeAndStart();
       f.advance(12345);
-      if (clock) await f.command({ type: "setDisplayMode", mode: "clock" });
+      if (clock) await f.takeClock();
       const before = f.service.getState();
       const viewer = await f.open("display");
       await viewer.next("state");
@@ -811,7 +840,7 @@ for (const clock of [false, true]) {
       const snapshot = await refreshed.next("state");
       assert.deepEqual(snapshot.timer, before.timer);
       assert.equal(snapshot.displayMode, before.displayMode);
-      const started = await f.command({ type: "startPrepared" });
+      const started = await f.takeAndStart();
       assert.equal(started.timer.deadline, f.now + 900000);
       assert.equal(started.liveSession.name, "Upcoming");
     } finally {
@@ -823,8 +852,7 @@ for (const clock of [false, true]) {
 test("existing stored LIVE timers migrate without changing deadline, timestamps or Pacific mode", () => {
   for (const clock of [false, true]) {
     let state = reduce(initialState(), { type: "start" }, 1000);
-    if (clock)
-      state = reduce(state, { type: "setDisplayMode", mode: "clock" }, 1500);
+    if (clock) state = takeClockState(state, 1500);
     const before = structuredClone(state);
     Reflect.deleteProperty(state, "preparedDurationMs");
     Reflect.deleteProperty(state, "liveSession");
@@ -837,7 +865,7 @@ test("existing stored LIVE timers migrate without changing deadline, timestamps 
 });
 
 test("LIVE pause/resume/reset controls never publish a different prepared timer", () => {
-  let state = reduce(initialState(), { type: "startPrepared" }, 1000);
+  let state = takeAndStartState(initialState(), 1000);
   state = reduce(
     state,
     { type: "add", name: "Prepared next", durationMs: 1800000 },
@@ -859,4 +887,131 @@ test("LIVE pause/resume/reset controls never publish a different prepared timer"
   state = reduce(state, { type: "start" }, 12000);
   assert.equal(state.timer.deadline, 5412000);
   assert.deepEqual(state.liveSession, liveSource);
+});
+
+test("Eastern and Pacific format correctly through midnight and both DST transitions", () => {
+  for (const [utc, expected] of [
+    ["2026-01-15T17:05:09Z", "12:05"],
+    ["2026-07-15T16:05:09Z", "12:05"],
+    ["2026-01-15T05:00:00Z", "12:00"],
+    ["2026-03-08T06:59:59Z", "1:59"],
+    ["2026-03-08T07:00:00Z", "3:00"],
+    ["2026-11-01T05:59:59Z", "1:59"],
+    ["2026-11-01T06:00:00Z", "1:00"],
+  ])
+    assert.equal(
+      formatClockTime(Date.parse(utc), "America/New_York"),
+      expected,
+    );
+  const now = Date.parse("2026-10-29T16:00:00Z");
+  assert.equal(formatClockTime(now, "America/New_York"), "12:00");
+  assert.equal(formatClockTime(now, "America/Los_Angeles"), "9:00");
+});
+
+test("only TAKE can switch output modes or clock timezones; TAKE countdown never starts", () => {
+  let state = takeAndStartState(initialState(), 1000);
+  const running = structuredClone(state);
+  state = reduce(state, { type: "setDisplayMode", mode: "clock" }, 2000);
+  state = reduce(
+    state,
+    { type: "setClockTimeZone", timeZone: "America/New_York" },
+    2000,
+  );
+  assert.deepEqual(state.timer, running.timer);
+  assert.equal(state.displayMode, "countdown");
+  assert.equal(state.clockTimeZone, DEFAULT_CLOCK_TIME_ZONE);
+  state = reduce(state, { type: "take" }, 3000);
+  assert.equal(state.displayMode, "clock");
+  assert.equal(state.clockTimeZone, "America/New_York");
+  assert.equal(state.timer.remainingMs, 5398000);
+  const clock = structuredClone(state);
+  state = reduce(
+    state,
+    { type: "setClockTimeZone", timeZone: "America/Los_Angeles" },
+    4000,
+  );
+  assert.deepEqual(state.timer, clock.timer);
+  assert.equal(state.clockTimeZone, "America/New_York");
+  assert.equal(state.preparedClockTimeZone, "America/Los_Angeles");
+  state = reduce(state, { type: "take" }, 5000);
+  assert.equal(state.clockTimeZone, "America/Los_Angeles");
+  assert.deepEqual(state.timer, clock.timer);
+  assert.throws(() => reduce(state, { type: "start" }, 6000), /Use TAKE/);
+  state = reduce(state, { type: "setDisplayMode", mode: "countdown" }, 7000);
+  assert.equal(state.displayMode, "clock");
+  state = reduce(state, { type: "take" }, 8000);
+  assert.equal(state.timer.status, "ready");
+  assert.equal(state.timer.deadline, null);
+  assert.equal(state.displayMode, "countdown");
+  assert.equal(
+    commandSchema.safeParse({ type: "startPrepared" }).success,
+    false,
+  );
+  assert.equal(
+    commandSchema.safeParse({ type: "loadPrepared" }).success,
+    false,
+  );
+  assert.equal(
+    commandSchema.safeParse({ type: "setClockTimeZone", timeZone: "EST" })
+      .success,
+    false,
+  );
+});
+
+test("LIVE and prepared timezones survive restart independently and viewers cannot TAKE", async () => {
+  const f = await fixture();
+  try {
+    await f.command({ type: "setClockTimeZone", timeZone: "America/New_York" });
+    await f.takeClock();
+    const clock = f.service.getState();
+    await f.command({
+      type: "setClockTimeZone",
+      timeZone: "America/Los_Angeles",
+    });
+    await f.command({ type: "setDisplayMode", mode: "countdown" });
+    await f.restart();
+    const state = f.service.getState();
+    assert.equal(state.displayMode, "clock");
+    assert.equal(state.clockTimeZone, "America/New_York");
+    assert.equal(state.preparedClockTimeZone, "America/Los_Angeles");
+    assert.equal(state.preparedDisplayMode, "countdown");
+    assert.deepEqual(state.timer, clock.timer);
+    const viewer = await f.open("display");
+    const snapshot = await viewer.next("state");
+    assert.equal(snapshot.clockTimeZone, "America/New_York");
+    assert.equal(snapshot.preparedClockTimeZone, undefined);
+    for (const command of [
+      { type: "take" },
+      { type: "setClockTimeZone", timeZone: "America/Los_Angeles" },
+    ]) {
+      viewer.socket.send(
+        JSON.stringify({
+          type: "command",
+          id: crypto.randomUUID(),
+          revision: state.revision,
+          command,
+        }),
+      );
+      assert.match((await viewer.next("error")).error, /Unauthorized/);
+    }
+    assert.deepEqual(f.service.getState(), state);
+  } finally {
+    await f.close();
+  }
+});
+
+test("timezone migration preserves old running deadlines and Pacific output", () => {
+  const state = reduce(initialState(), { type: "start" }, 1000);
+  const before = structuredClone(state);
+  for (const field of [
+    "clockTimeZone",
+    "preparedClockTimeZone",
+    "preparedDisplayMode",
+  ])
+    Reflect.deleteProperty(state, field);
+  const restored = normalizeState(state, 15000);
+  assert.deepEqual(restored.timer, before.timer);
+  assert.equal(restored.clockTimeZone, "America/Los_Angeles");
+  assert.equal(restored.preparedClockTimeZone, "America/Los_Angeles");
+  assert.equal(restored.preparedDisplayMode, "countdown");
 });

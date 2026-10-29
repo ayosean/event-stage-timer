@@ -3,7 +3,7 @@
 A single-service event countdown for a remote controller and any number of read-only presenter displays. React + TypeScript + Vite, Node 24, native WebSockets, and SQLite. No external database or paid real-time service is required.
 
 - `/controller`: password-protected dark production dashboard, rundown editor, presets, live adjustments, and viewer count.
-- `/display`: **only** a huge centered countdown on pure black. White digits while counting down; red `00:00` at zero, then elapsed overtime counting up (`00:01`, `00:02`, …). No names, branding, controls, or scrolling. Current Time mode instead shows only a large white Pacific Time clock.
+- `/display`: **only** a huge centered countdown on pure black. White digits while counting down; red `00:00` at zero, then elapsed overtime counting up (`00:01`, `00:02`, …). No names, branding, controls, or scrolling. Current Time mode instead shows only a large white Eastern or Pacific clock.
 - `/health`: database health check, returns `{"ok":true}` when healthy.
 
 ## Deploy to Railway
@@ -38,7 +38,7 @@ Do not remove or replace the volume during redeploys. Enable Railway volume back
 ## Controller operation
 
 The dashboard separates **LIVE output** from **off-air preparation**. A running
-countdown or Pacific clock owns its own saved state and is independent of the
+countdown or selected clock owns its own saved state and is independent of the
 rundown. Planning commands cannot change the LIVE deadline, remaining time,
 mode, or original session name.
 
@@ -49,10 +49,16 @@ mode, or original session name.
   the LIVE source entry leaves its output running with its original name and
   deadline. Keep at least one agenda entry. Limits: 200 sessions, 120-character
   names, duration 1 second–999 minutes.
-- **Start prepared LIVE** explicitly publishes and starts the prepared timer.
-  **Show prepared paused** publishes it in the ready state without a deadline;
-  it stays paused until you manually press Start. An active countdown or clock
-  requires a confirmation before either action can replace it.
+- Choose **Countdown** or **Current Time** in **Prepare next output**. Clock
+  timezone choices are **Eastern — New York** (`America/New_York`) and
+  **Pacific — San Francisco** (`America/Los_Angeles`). Modes and timezone
+  changes are also off air until TAKE.
+- **TAKE** is the only command that publishes a prepared output. Taking a
+  countdown always loads its full prepared duration paused, with no deadline;
+  press **Start** in the LIVE panel when the presenter is ready. Taking a clock
+  shows the prepared timezone and pauses an existing running countdown.
+  Replacing an active output requires confirmation. There is no shortcut that
+  automatically publishes and starts a prepared timer.
 - The LIVE panel's **Pause / Resume** and **+/−** controls intentionally affect
   the existing LIVE timer. They never publish a different prepared session.
   Adding/subtracting 30 seconds or 1, 5, or 10 minutes preserves running/paused
@@ -63,7 +69,7 @@ mode, or original session name.
   you reviewed; another controller's intervening command causes rejection rather
   than silently publishing a different prepared timer.
 - Editing, selecting, or preparing sessions while the clock is on air leaves the
-  clock visible. Only explicit LIVE controls can change it.
+  clock visible. Mode/timezone changes take effect only after TAKE.
 - LIVE state and the separately prepared session/duration both survive refresh
   and server restart. Migration from earlier versions preserves the existing
   LIVE deadline, start/pause timestamps and display mode.
@@ -74,16 +80,27 @@ mode, or original session name.
 
 ## Current Time display
 
-Use **Current Time** above the live preview to show San Francisco's current time on every connected display. It shows 12-hour time with just hours and minutes, for example `9:05`, without seconds or AM/PM, in large white type on black. The timezone is fixed to **America/Los_Angeles**, which automatically switches between PST and PDT. The device's own timezone does not change the display.
+Choose **Current Time** in the off-air preparation panel, select **Eastern —
+New York** or **Pacific — San Francisco**, review the clock preview, then press
+**TAKE**. Every connected display follows the LIVE timezone. Selecting a different
+timezone changes only the preview until the next TAKE.
 
-The **Current Time** button is a LIVE output control: switching to it pauses a
-running countdown and preserves the exact remaining time, including overtime.
-**Countdown** switches back without starting it; Resume is manual. An active
-output requires confirmation for a mode switch. Rundown work and preparing a
-new timer never change the clock. Explicitly publishing a prepared timer returns
-the display to Countdown mode.
+The display shows just 12-hour hours and minutes, for example `9:05`, without
+seconds, AM/PM, labels, or controls. IANA timezone rules automatically handle
+EST/EDT and PST/PDT. The device's own timezone and wall clock do not change the
+result: clients synchronize to server time and interpolate locally.
 
-The server persists the selected mode on the volume and sends it to all viewers, including after refresh, reconnect, and server restart. Clock mode uses the same server-time synchronization and monotonic local clock as the countdown; it continues ticking through a temporary disconnection. Display viewers cannot change modes. Screen wake lock applies to both modes.
+LIVE and prepared timezones/modes persist independently through refresh and
+server restart. Existing installations default to Pacific during migration,
+without changing an existing countdown's deadline or state. A clock continues
+locally during a temporary connection loss. Viewers cannot change the timezone
+or issue TAKE. Screen wake lock applies to both countdown and clock mode.
+
+To leave clock mode, prepare **Countdown** and press TAKE. This loads the
+prepared countdown paused; it never starts automatically. LIVE countdown
+controls are disabled while the clock is on air. Refresh both controller and
+iPad display after deploying this update so they load the new timezone-aware
+code.
 
 ## iPad setup
 
@@ -133,4 +150,4 @@ Browser tests start their own server on port 3000 with disposable test credentia
 
 ### Live-device smoke checks
 
-On a laptop and landscape iPad using different networks: log in, prepare 90 minutes, Show prepared paused, start, pause/resume, add five minutes, reload the iPad, and disconnect/reconnect Wi-Fi. While LIVE is running, prepare 30 minutes, edit/delete its source agenda entry, and select a different presenter; verify the LIVE deadline is unchanged. Then explicitly publish the prepared timer paused and verify it stays ready until Start. Temporarily load a short duration and verify red `00:00` followed by increasing overtime. Redeploy once before the event and verify the same deadline and rundown return. Test Auto-Lock and Guided Access for longer than the device's normal sleep interval. Automated browser tests cannot verify the physical iPad's sleep settings.
+On a laptop and landscape iPad using different networks: log in, prepare 90 minutes, press TAKE, start, pause/resume, add five minutes, reload the iPad, and disconnect/reconnect Wi-Fi. While LIVE is running, prepare 30 minutes, edit/delete its source agenda entry, and select a different presenter; verify the LIVE deadline is unchanged. Then explicitly TAKE the prepared timer and verify it stays ready until Start. Temporarily load a short duration and verify red `00:00` followed by increasing overtime. Redeploy once before the event and verify the same deadline and rundown return. Test Auto-Lock and Guided Access for longer than the device's normal sleep interval. Automated browser tests cannot verify the physical iPad's sleep settings.

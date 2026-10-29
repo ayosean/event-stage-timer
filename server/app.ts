@@ -171,6 +171,7 @@ export function createApp(config: Config) {
     return {
       type: "state",
       displayMode: state.displayMode,
+      clockTimeZone: state.clockTimeZone,
       revision: state.revision,
       timer: state.timer,
       serverNow: now(),
@@ -179,6 +180,8 @@ export function createApp(config: Config) {
             sessions: state.sessions,
             selectedId: state.selectedId,
             preparedDurationMs: state.preparedDurationMs,
+            preparedDisplayMode: state.preparedDisplayMode,
+            preparedClockTimeZone: state.preparedClockTimeZone,
             liveSession: state.liveSession,
             viewers: [...clients.values()].filter((c) => c.role === "display")
               .length,
