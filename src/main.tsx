@@ -380,6 +380,34 @@ function Controller({ onLogout }: { onLogout: () => void }) {
       setLiveChange({ command: next, revision: snapshot.revision, label });
     else command(next, snapshot.revision);
   }
+  const presenterNavigation = (
+    <div className={`prepare-navigation ${legacy ? "legacy-navigation" : ""}`}>
+      <button
+        disabled={disabled || index <= 0}
+        aria-label="Previous presenter"
+        title={
+          legacy
+            ? "Load previous presenter LIVE, paused"
+            : "Prepare previous presenter; LIVE stays unchanged"
+        }
+        onClick={() => outputCommand({ type: "step", direction: -1 })}
+      >
+        <ChevronLeft size={18} /> Previous
+      </button>
+      <button
+        disabled={disabled || index >= sessions.length - 1}
+        aria-label="Next presenter"
+        title={
+          legacy
+            ? "Load next presenter LIVE, paused"
+            : "Prepare next presenter; LIVE stays unchanged"
+        }
+        onClick={() => outputCommand({ type: "step", direction: 1 })}
+      >
+        Next <ChevronRight size={18} />
+      </button>
+    </div>
+  );
   return (
     <div className="app-shell">
       <header className="topbar">
@@ -619,6 +647,7 @@ function Controller({ onLogout }: { onLogout: () => void }) {
                     <span>Reset</span>
                   </button>
                 </div>
+                {legacy && presenterNavigation}
                 <div className="adjustments">
                   <span className="control-caption">ADJUST LIVE TIME</span>
                   <div>
@@ -752,28 +781,7 @@ function Controller({ onLogout }: { onLogout: () => void }) {
                       : "Off air until TAKE. Daylight saving time is automatic."}
                   </p>
                 </div>
-                <div className="prepare-navigation">
-                  <button
-                    disabled={disabled || index <= 0}
-                    aria-label="Previous presenter"
-                    title="Prepare previous presenter; LIVE stays unchanged"
-                    onClick={() =>
-                      outputCommand({ type: "step", direction: -1 })
-                    }
-                  >
-                    <ChevronLeft size={18} /> Previous
-                  </button>
-                  <button
-                    disabled={disabled || index >= sessions.length - 1}
-                    aria-label="Next presenter"
-                    title="Prepare next presenter; LIVE stays unchanged"
-                    onClick={() =>
-                      outputCommand({ type: "step", direction: 1 })
-                    }
-                  >
-                    Next <ChevronRight size={18} />
-                  </button>
-                </div>
+                {!legacy && presenterNavigation}
                 <div className="prepared-summary" hidden={legacy}>
                   <span>
                     {preparedMode === "clock"

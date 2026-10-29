@@ -526,6 +526,17 @@ test("Legacy tab restores direct controls while entering/leaving it leaves LIVE 
     .getByRole("button", { name: "Load Legacy browser presenter", exact: true })
     .click();
   await expect(viewer.locator("main")).toHaveText("25:00");
+  await page
+    .locator("#panel-live")
+    .getByRole("button", { name: "Previous presenter", exact: true })
+    .click();
+  await expect(viewer.locator("main")).toHaveText("30:00");
+  await page
+    .locator("#panel-live")
+    .getByRole("button", { name: "Next presenter", exact: true })
+    .click();
+  await expect(viewer.locator("main")).toHaveText("25:00");
+  expect((await output(page)).timer.status).toBe("ready");
   await expect(
     page.getByRole("tab", { name: "Legacy", exact: true }),
   ).toHaveAttribute("aria-selected", "true");

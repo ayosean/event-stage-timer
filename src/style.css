@@ -1227,3 +1227,11 @@ body:has(.presenter-display) {
   font-size: 12px;
   line-height: 1.6;
 }
+
+.legacy-navigation {
+  padding: 0 0 22px;
+}
+.legacy-navigation button {
+  flex: 1;
+  min-height: 46px;
+}
