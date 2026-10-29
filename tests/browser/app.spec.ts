@@ -506,10 +506,11 @@ test("LIVE and Staging tabs share large previews and never change output when sw
 test("Legacy tab restores direct controls while entering/leaving it leaves LIVE untouched", async ({
   page,
   context,
-}) => {
+}, testInfo) => {
+  const presenter = `Legacy browser presenter ${testInfo.project.name}`;
   await login(page);
   await startPrepared(page, 90);
-  await addSession(page, "Legacy browser presenter");
+  await addSession(page, presenter);
   const before = await output(page);
   await tab(page, "Legacy");
   expect((await output(page)).timer).toEqual(before.timer);
@@ -522,15 +523,20 @@ test("Legacy tab restores direct controls while entering/leaving it leaves LIVE 
   await page.getByRole("button", { name: "30 min", exact: true }).click();
   await expect(viewer.locator("main")).toHaveText("30:00");
   expect((await output(page)).timer.status).toBe("ready");
+  const rows = page.locator(".session-list > li");
+  const previousTime = await rows
+    .nth((await rows.count()) - 2)
+    .locator(".row-duration")
+    .innerText();
   await page
-    .getByRole("button", { name: "Load Legacy browser presenter", exact: true })
+    .getByRole("button", { name: `Load ${presenter}`, exact: true })
     .click();
   await expect(viewer.locator("main")).toHaveText("25:00");
   await page
     .locator("#panel-live")
     .getByRole("button", { name: "Previous presenter", exact: true })
     .click();
-  await expect(viewer.locator("main")).toHaveText("30:00");
+  await expect(viewer.locator("main")).toHaveText(previousTime);
   await page
     .locator("#panel-live")
     .getByRole("button", { name: "Next presenter", exact: true })
