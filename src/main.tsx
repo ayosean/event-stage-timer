@@ -342,6 +342,7 @@ function Controller({ onLogout }: { onLogout: () => void }) {
     pending,
     clearError,
   } = useTimer("controller", true, onLogout);
+  const [outputTab, setOutputTab] = useState<"live" | "staging">("live");
   const [liveTime, setLiveTime] = useState("");
   const [custom, setCustom] = useState(""),
     [editor, setEditor] = useState<Session | null | undefined>(undefined),
@@ -448,7 +449,61 @@ function Controller({ onLogout }: { onLogout: () => void }) {
         )}
         <div className="dashboard-grid">
           <section className="timer-column">
-            <div className="panel timer-panel">
+            <div className="output-tabs-bar">
+              <div
+                className="output-tabs"
+                role="tablist"
+                aria-label="Output workspace"
+              >
+                {(["live", "staging"] as const).map((tab) => (
+                  <button
+                    key={tab}
+                    id={`tab-${tab}`}
+                    role="tab"
+                    aria-selected={outputTab === tab}
+                    aria-controls={`panel-${tab}`}
+                    tabIndex={outputTab === tab ? 0 : -1}
+                    onClick={() => setOutputTab(tab)}
+                    onKeyDown={(event) => {
+                      if (
+                        ["ArrowLeft", "ArrowRight", "Home", "End"].includes(
+                          event.key,
+                        )
+                      ) {
+                        event.preventDefault();
+                        const next =
+                          event.key === "Home"
+                            ? "live"
+                            : event.key === "End"
+                              ? "staging"
+                              : tab === "live"
+                                ? "staging"
+                                : "live";
+                        setOutputTab(next);
+                        document.getElementById(`tab-${next}`)?.focus();
+                      }
+                    }}
+                  >
+                    {tab === "live" ? <Radio size={16} /> : <Timer size={16} />}
+                    {tab === "live" ? "LIVE Output" : "Staging"}
+                  </button>
+                ))}
+              </div>
+              <span className="workspace-live-status" aria-label="LIVE status">
+                LIVE ·{" "}
+                {clockMode
+                  ? formatClockTime(serverNow, clockTimeZone)
+                  : formatTime(ms)}
+                {!clockMode && ` · ${running ? "Running" : "Paused"}`}
+              </span>
+            </div>
+            <div
+              className="panel timer-panel"
+              id="panel-live"
+              role="tabpanel"
+              aria-labelledby="tab-live"
+              hidden={outputTab !== "live"}
+            >
               <div className="timer-panel-heading">
                 <span className="eyebrow">
                   <Radio size={14} />
@@ -598,7 +653,13 @@ function Controller({ onLogout }: { onLogout: () => void }) {
                 </form>
               </div>
             </div>
-            <section className="panel duration-panel">
+            <section
+              className="panel duration-panel"
+              id="panel-staging"
+              role="tabpanel"
+              aria-labelledby="tab-staging"
+              hidden={outputTab !== "staging"}
+            >
               <div className="section-heading">
                 <h2>Prepare next output</h2>
                 <span className="subtle-chip">OFF AIR · Safe to edit</span>
@@ -674,11 +735,15 @@ function Controller({ onLogout }: { onLogout: () => void }) {
                     ? clockTimeZoneLabels[preparedZone].heading
                     : (current?.name ?? "Preparing…")}
                 </span>
-                <strong>
-                  {preparedMode === "clock"
-                    ? formatClockTime(serverNow, preparedZone)
-                    : formatTime(snapshot?.preparedDurationMs ?? 0)}
-                </strong>
+                <div className="preview-clock">
+                  <Digits
+                    value={
+                      preparedMode === "clock"
+                        ? formatClockTime(serverNow, preparedZone)
+                        : formatTime(snapshot?.preparedDurationMs ?? 0)
+                    }
+                  />
+                </div>
                 <p>
                   Session selection, modes, timezones, presets, and rundown
                   edits stay off air. LIVE output keeps going until TAKE.
@@ -752,7 +817,7 @@ function Controller({ onLogout }: { onLogout: () => void }) {
                 <p>
                   {preparedMode === "clock"
                     ? "TAKE sends the selected clock to every display."
-                    : "TAKE loads this timer paused. Start begins the LIVE countdown."}
+                    : "TAKE loads this timer paused. Open LIVE Output and press Start to begin."}
                 </p>
               </div>
             </section>
@@ -827,9 +892,10 @@ function Controller({ onLogout }: { onLogout: () => void }) {
                       aria-label={`Prepare ${session.name}`}
                       title="Prepare this session; LIVE output stays unchanged"
                       disabled={disabled}
-                      onClick={() =>
-                        command({ type: "select", id: session.id })
-                      }
+                      onClick={() => {
+                        command({ type: "select", id: session.id });
+                        setOutputTab("staging");
+                      }}
                     >
                       <span>{session.name}</span>
                       {current?.id === session.id && <small>PREPARED</small>}

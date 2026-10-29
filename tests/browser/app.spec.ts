@@ -27,12 +27,17 @@ async function publish(page: Page, button: Locator) {
   if (await confirm.isVisible()) await confirm.click();
   await expect(page.getByRole("dialog")).toHaveCount(0);
 }
+async function tab(page: Page, name: "LIVE Output" | "Staging") {
+  await page.getByRole("tab", { name, exact: true }).click();
+}
 async function startPrepared(page: Page, minutes: number) {
+  await tab(page, "Staging");
   await page.getByRole("button", { name: "Countdown", exact: true }).click();
   await page
     .getByRole("button", { name: `${minutes} min`, exact: true })
     .click();
   await publish(page, page.getByRole("button", { name: "TAKE", exact: true }));
+  await tab(page, "LIVE Output");
   await expect(page.getByText("READY TO START", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Start timer", exact: true }).click();
   await expect(page.getByText("RUNNING", { exact: true })).toBeVisible();
@@ -75,6 +80,7 @@ async function addSession(page: Page, name: string) {
   ).toBeVisible();
 }
 async function agendaWork(page: Page, suffix: string) {
+  await tab(page, "Staging");
   await page.getByRole("button", { name: "Countdown", exact: true }).click();
   const source = await page
     .locator(".timer-panel .session-heading h2")
@@ -127,7 +133,9 @@ async function agendaWork(page: Page, suffix: string) {
   await page
     .getByRole("button", { name: "Prepare timer", exact: true })
     .click();
-  await expect(page.locator(".prepared-summary strong")).toHaveText("17:30");
+  await expect(page.locator(".prepared-summary .digits span")).toHaveText(
+    "17:30",
+  );
   return source;
 }
 
@@ -149,9 +157,13 @@ test("manual LIVE start, precise pause/resume, adjustments and offline landscape
   await viewer.goto("/display");
   await expect(viewer.locator("main")).toHaveText("89:59", { timeout: 5000 });
   const running = await output(viewer);
+  await tab(page, "Staging");
   await page.getByRole("button", { name: "30 min", exact: true }).click();
-  await expect(page.locator(".prepared-summary strong")).toHaveText("30:00");
+  await expect(page.locator(".prepared-summary .digits span")).toHaveText(
+    "30:00",
+  );
   expect((await output(viewer)).timer).toEqual(running.timer);
+  await tab(page, "LIVE Output");
   await page
     .getByRole("button", { name: "Add 5 minutes", exact: true })
     .click();
@@ -217,7 +229,10 @@ test("all agenda work including deleting LIVE source is off air; publishing paus
   await expect(page.locator(".timer-panel .session-heading h2")).toHaveText(
     source,
   );
-  await expect(page.locator(".prepared-summary strong")).toHaveText("17:30");
+  await expect(page.locator(".prepared-summary .digits span")).toHaveText(
+    "17:30",
+  );
+  await tab(page, "Staging");
   await page.getByRole("button", { name: "TAKE", exact: true }).click();
   await page
     .getByRole("button", { name: "Keep LIVE unchanged", exact: true })
@@ -225,6 +240,7 @@ test("all agenda work including deleting LIVE source is off air; publishing paus
   expect((await output(viewer)).timer).toEqual(before.timer);
   await publish(page, page.getByRole("button", { name: "TAKE", exact: true }));
   await expect(viewer.locator("main")).toHaveText("17:30");
+  await tab(page, "LIVE Output");
   await expect(page.getByText("READY TO START", { exact: true })).toBeVisible();
   await viewer.waitForTimeout(1100);
   await expect(viewer.locator("main")).toHaveText("17:30");
@@ -246,18 +262,21 @@ test("Eastern/Pacific clock selection stays off air until TAKE and survives refr
   await login(page);
   await startPrepared(page, 30);
   const running = await output(page);
+  await tab(page, "Staging");
   await page.getByRole("button", { name: "Current Time", exact: true }).click();
   await page
     .getByLabel("Clock timezone", { exact: true })
     .selectOption("America/New_York");
   expect((await output(page)).displayMode).toBe("countdown");
   expect((await output(page)).timer).toEqual(running.timer);
+  await tab(page, "Staging");
   await page.getByRole("button", { name: "TAKE", exact: true }).click();
   await page
     .getByRole("button", { name: "Keep LIVE unchanged", exact: true })
     .click();
   expect((await output(page)).timer).toEqual(running.timer);
   await publish(page, page.getByRole("button", { name: "TAKE", exact: true }));
+  await tab(page, "LIVE Output");
   await expect(page.getByText("EASTERN TIME", { exact: true })).toBeVisible();
   const context = await browser.newContext({
     viewport: { width: 1194, height: 834 },
@@ -287,12 +306,14 @@ test("Eastern/Pacific clock selection stays off air until TAKE and survives refr
   await agendaWork(page, `clock-${testInfo.project.name}`);
   expect((await output(viewer)).displayMode).toBe("clock");
   expect((await output(viewer)).timer).toEqual(before.timer);
+  await tab(page, "Staging");
   await page.getByRole("button", { name: "Current Time", exact: true }).click();
   await page
     .getByLabel("Clock timezone", { exact: true })
     .selectOption("America/Los_Angeles");
   expect((await output(viewer)).clockTimeZone).toBe("America/New_York");
   await publish(page, page.getByRole("button", { name: "TAKE", exact: true }));
+  await tab(page, "LIVE Output");
   await expect(page.getByText("PACIFIC TIME", { exact: true })).toBeVisible();
   await expect
     .poll(async () => {
@@ -323,9 +344,11 @@ test("Eastern/Pacific clock selection stays off air until TAKE and survives refr
   );
   await expect(viewer.locator("button,input,a,select")).toHaveCount(0);
   await viewer.screenshot({ path: testInfo.outputPath("clock-ipad.png") });
+  await tab(page, "Staging");
   await page.getByRole("button", { name: "Countdown", exact: true }).click();
   expect((await output(viewer)).displayMode).toBe("clock");
   await publish(page, page.getByRole("button", { name: "TAKE", exact: true }));
+  await tab(page, "LIVE Output");
   await expect(page.getByText("READY TO START", { exact: true })).toBeVisible();
   await expect(viewer.locator("main")).toHaveText("17:30");
   await viewer.waitForTimeout(1100);
@@ -338,12 +361,14 @@ test("overtime survives planning and stale LIVE confirmations cannot replace out
   browser,
 }) => {
   await login(page);
+  await tab(page, "Staging");
   await page.getByRole("button", { name: "Countdown", exact: true }).click();
   await page.getByLabel("Custom duration").fill("0.016666667");
   await page
     .getByRole("button", { name: "Prepare timer", exact: true })
     .click();
   await publish(page, page.getByRole("button", { name: "TAKE", exact: true }));
+  await tab(page, "LIVE Output");
   await page.getByRole("button", { name: "Start timer", exact: true }).click();
   const context = await browser.newContext();
   const viewer = await context.newPage();
@@ -353,20 +378,26 @@ test("overtime survives planning and stale LIVE confirmations cannot replace out
   });
   await expect(viewer.locator("main")).toHaveText("00:01", { timeout: 4000 });
   const before = await output(viewer);
+  await tab(page, "Staging");
   await page.getByRole("button", { name: "60 min", exact: true }).click();
   expect((await output(viewer)).timer).toEqual(before.timer);
+  await tab(page, "Staging");
   await page.getByRole("button", { name: "TAKE", exact: true }).click();
   await expect(page.getByRole("dialog")).toBeVisible();
   const other = await page.context().newPage();
   await login(other);
+  await tab(other, "Staging");
   await other.getByRole("button", { name: "45 min", exact: true }).click();
-  await expect(page.locator(".prepared-summary strong")).toHaveText("45:00");
+  await expect(page.locator(".prepared-summary .digits span")).toHaveText(
+    "45:00",
+  );
   await page
     .getByRole("button", { name: "Confirm LIVE change", exact: true })
     .click();
   await expect(page.getByRole("alert")).toContainText("State changed");
   expect((await output(viewer)).timer).toEqual(before.timer);
   await publish(page, page.getByRole("button", { name: "TAKE", exact: true }));
+  await tab(page, "LIVE Output");
   await page.getByRole("button", { name: "Start timer", exact: true }).click();
   await expect(page.getByText("RUNNING", { exact: true })).toBeVisible();
   await expect(viewer.locator(".digits")).toHaveCSS(
@@ -389,7 +420,9 @@ test("custom LIVE time sets an exact paused time and adjusts running time withou
   const viewer = await context.newPage();
   await viewer.goto("/display");
   await page.getByRole("button", { name: "Pause", exact: true }).click();
+  await tab(page, "Staging");
   await page.getByRole("button", { name: "15 min", exact: true }).click();
+  await tab(page, "LIVE Output");
   await page.getByLabel("Custom LIVE time", { exact: true }).fill("12:30");
   await page
     .getByRole("button", { name: "Set LIVE time", exact: true })
@@ -417,7 +450,55 @@ test("custom LIVE time sets an exact paused time and adjusts running time withou
     })
     .toBe(150000);
   expect((await output(page)).timer.status).toBe("running");
+  await tab(page, "Staging");
   await expect(
     page.getByRole("button", { name: "15 min", exact: true }),
   ).toHaveClass(/selected/);
+});
+
+test("LIVE and Staging tabs share large previews and never change output when switching", async ({
+  page,
+}, testInfo) => {
+  await login(page);
+  await startPrepared(page, 90);
+  await page.getByRole("button", { name: "Pause", exact: true }).click();
+  const before = await output(page);
+  const liveBounds = await page
+    .locator("#panel-live .preview-clock")
+    .boundingBox();
+  await tab(page, "Staging");
+  await expect(page.locator("#panel-live")).toBeHidden();
+  await expect(page.locator("#panel-staging")).toBeVisible();
+  const stagedBounds = await page
+    .locator("#panel-staging .preview-clock")
+    .boundingBox();
+  expect(stagedBounds!.height).toBe(liveBounds!.height);
+  expect(Math.abs(stagedBounds!.width - liveBounds!.width)).toBeLessThan(5);
+  const digits = page.locator("#panel-staging .digits span");
+  await expect
+    .poll(async () =>
+      parseFloat(await digits.evaluate((el) => getComputedStyle(el).fontSize)),
+    )
+    .toBeGreaterThan(100);
+  await page
+    .getByRole("tab", { name: "Staging", exact: true })
+    .press("ArrowLeft");
+  await expect(
+    page.getByRole("tab", { name: "LIVE Output", exact: true }),
+  ).toBeFocused();
+  await expect(page.locator("#panel-live")).toBeVisible();
+  expect((await output(page)).timer).toEqual(before.timer);
+  expect((await output(page)).revision).toBe(before.revision);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await tab(page, "Staging");
+  await expect
+    .poll(() => digits.evaluate((el) => el.getBoundingClientRect().width))
+    .toBeLessThan(340);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(
+    390,
+  );
+  await page.screenshot({
+    path: testInfo.outputPath("staging-tabs-mobile.png"),
+    fullPage: true,
+  });
 });

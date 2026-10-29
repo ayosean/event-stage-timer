@@ -63,6 +63,7 @@ mode, or original session name.
   the existing LIVE timer. They never publish a different prepared session.
   Adding/subtracting 30 seconds or 1, 5, or 10 minutes preserves running/paused
   status. Overtime counts upward in red and supports pause/resume/adjustments.
+- **LIVE Output / Staging tabs** switch the dashboard view without sending any timer command. Both use a large time preview. Prepare sessions and clock settings in Staging, press TAKE, then open LIVE Output for Start/Pause and live adjustments. Selecting a session in the rundown opens Staging automatically.
 - **Custom LIVE time** under Adjust Live Time replaces the remaining countdown immediately. Enter minutes (`15`) or `MM:SS` (`12:30`), then select **Set LIVE time**. Running timers keep running; paused/ready timers stay stopped. This does not change the rundown, prepared duration, or original Reset duration. Clock output disables this control.
 - **Reset** restores the LIVE timer's original loaded duration, paused. Reset
   and display mode switches require confirmation when an output is active.
